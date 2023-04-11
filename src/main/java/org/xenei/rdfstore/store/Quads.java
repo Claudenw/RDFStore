@@ -47,11 +47,11 @@ public class Quads {
             }
         }
 
-        int use = deleted.lowest();
+        long use = deleted.lowest();
         if (use >= 0) {
             deleted.clear(use);
-            FixedSizeGatedList<Quad> fsgl = lists.get(use / pageSize);
-            return fsgl.put(use % pageSize, bf, quad);
+            FixedSizeGatedList<Quad> fsgl = lists.get((int) (use / pageSize));
+            return fsgl.put((int)(use % pageSize), bf, quad);
         }
         // no deleted entries available
         FixedSizeGatedList<Quad> sfgl = lists.get(lists.size() - 1);
@@ -86,19 +86,19 @@ public class Quads {
 
     }
 
-    public Iterator<Quad> iterator(PrimitiveIterator.OfInt intIter) {
+    public Iterator<Quad> iterator(PrimitiveIterator.OfLong longIter) {
         return new Iterator<Quad>() {
 
             @Override
             public boolean hasNext() {
-                return intIter.hasNext();
+                return longIter.hasNext();
             }
 
             @Override
             public Quad next() {
-                int pos = intIter.nextInt();
-                int offset = pos / pageSize;
-                int idx = pos % pageSize;
+                long pos = longIter.nextLong();
+                int offset = (int) (pos / pageSize);
+                int idx = (int) (pos % pageSize);
                 return lists.get(offset).get(idx);
             }
 

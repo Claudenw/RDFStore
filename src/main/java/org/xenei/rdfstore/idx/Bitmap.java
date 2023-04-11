@@ -9,15 +9,28 @@ import org.apache.commons.collections4.bloomfilter.BitMapProducer;
 import org.apache.commons.collections4.bloomfilter.IndexProducer;
 
 public class Bitmap {
+    
+    public static final long MAX_INDEX = (64L*Integer.MAX_VALUE)+63;
 
-    private TreeMap<Integer, Entry> entries = new TreeMap<Integer, Entry>();
+    TreeMap<Integer, Entry> entries = new TreeMap<Integer, Entry>();
 
+    /**
+     * Calculates the union of the bitmap arguments.
+     * Creates a new bitmap instance.
+     * @param maps the bitmaps to calculate the union for.
+     * @return a new bitmap.
+     */
     public static Bitmap union(Bitmap... maps) {
         Bitmap result = new Bitmap();
         for (Bitmap map : maps) {
             Integer key = map.entries.firstKey();
             while (key != null) {
-                result.entries.get(key).union(map.entries.get(key));
+                Entry rEntry = result.entries.get(key);
+                if (rEntry == null) {
+                    result.entries.put(key, map.entries.get(key));
+                } else {
+                    rEntry.union(map.entries.get(key));
+                }
                 key = map.entries.higherKey(key);
             }
         }
@@ -26,6 +39,9 @@ public class Bitmap {
 
     public static Bitmap intersection(Bitmap... maps) {
         Bitmap result = new Bitmap();
+        if (maps.length == 0) {
+            return result;
+        }
         // check for any null entries
         for (Bitmap m : maps) {
             if (m == null) {
@@ -42,21 +58,91 @@ public class Bitmap {
         }
         Integer nextKey = null;
         while (key != null) {
-            Entry entry = result.entries.get(key);
-            for (Bitmap map : maps) {
-                Integer testKey = map.entries.higherKey(key);
-                nextKey = nextKey == null ? testKey : (nextKey > testKey ? testKey : nextKey);
-                entry.intersection(map.entries.get(key));
+            Entry entry = maps[0].entries.get(key);
+            for (int i=1; i<maps.length; i++) {
+                Integer testKey = maps[i].entries.higherKey(key);
+                if (nextKey == null) {
+                    nextKey = testKey;
+                } else if (testKey != null) {
+                    nextKey = nextKey > testKey ? testKey : nextKey;
+                }
+                Entry other = maps[i].entries.get(key);
+                if (other == null) {
+                    entry = null;
+                    break;
+                } else {
+                    entry.intersection(other);
+                }
+            }
+            if (entry != null && !entry.isEmpty()) {
+                result.entries.put( key, entry );
             }
             key = nextKey;
             nextKey = null;
         }
         return result;
     }
+    
+
+    /**
+     * Gets the filter index for the specified bit index assuming the filter is
+     * using 64-bit longs to store bits starting at index 0.
+     *
+     * <p>
+     * The index is assumed to be positive. For a positive index the result will
+     * match {@code bitIndex / 64}.
+     * </p>
+     *
+     * <p>
+     * <em>The divide is performed using bit shifts. If the input is negative the
+     * behavior is not defined.</em>
+     * </p>
+     *
+     * @param bitIndex the bit index (assumed to be positive)
+     * @return the index of the bit map in an array of bit maps.
+     */
+    public static int getLongIndex(final long bitIndex) {
+        // An integer divide by 64 is equivalent to a shift of 6 bits if the integer is
+        // positive.
+        // We do not explicitly check for a negative here. Instead we use a
+        // signed shift. Any negative index will produce a negative value
+        // by sign-extension and if used as an index into an array it will throw an
+        // exception.
+        return (int) bitIndex >> DIVIDE_BY_64;
+    }
+
+    /**
+     * Gets the filter bit mask for the specified bit index assuming the filter is
+     * using 64-bit longs to store bits starting at index 0. The returned value is a
+     * {@code long} with only 1 bit set.
+     *
+     * <p>
+     * The index is assumed to be positive. For a positive index the result will
+     * match {@code 1L << (bitIndex % 64)}.
+     * </p>
+     *
+     * <p>
+     * <em>If the input is negative the behavior is not defined.</em>
+     * </p>
+     *
+     * @param bitIndex the bit index (assumed to be positive)
+     * @return the filter bit
+     */
+    public static long getLongBit(final long bitIndex) {
+        // Bit shifts only use the first 6 bits. Thus it is not necessary to mask this
+        // using 0x3f (63) or compute bitIndex % 64.
+        // Note: If the index is negative the shift will be (64 - (bitIndex & 0x3f)) and
+        // this will identify an incorrect bit.
+        return 1L << bitIndex;
+    }
+
 
     /** A bit shift to apply to an integer to divided by 64 (2^6). */
     private static final int DIVIDE_BY_64 = 6;
 
+    private void checkBitIndex( long bitIndex ) {
+        assert bitIndex <= MAX_INDEX : "Index too large";
+    }
     /**
      * Checks if the specified index bit is enabled in the array of bit maps.
      *
@@ -68,7 +154,8 @@ public class Bitmap {
      * @throws IndexOutOfBoundsException if bitIndex specifies a bit not in the
      * range being tracked.
      */
-    public boolean contains(final int bitIndex) {
+    public boolean contains(final long bitIndex) {
+        checkBitIndex( bitIndex );
         Entry entry = entries.get(Integer.valueOf(getLongIndex(bitIndex)));
         return entry == null ? false : entry.contains(bitIndex);
     }
@@ -77,7 +164,7 @@ public class Bitmap {
      * Returns the index of the lowest enabled bit.
      * @return the index of the lowest enabled bit.
      */
-    public int lowest() {
+    public long lowest() {
         if (entries.isEmpty()) {
             return -1;
         }
@@ -105,14 +192,14 @@ public class Bitmap {
      * @throws IndexOutOfBoundsException if bitIndex specifies a bit not in the
      * range being tracked.
      */
-    public void set(final int bitIndex) {
+    public void set(final long bitIndex) {
+        checkBitIndex( bitIndex );
         Integer entryIndex = Integer.valueOf(getLongIndex(bitIndex));
         Entry entry = entries.get(entryIndex);
         if (entry == null) {
             entry = new Entry(entryIndex);
             entries.put(entryIndex, entry);
         }
-
         entry.set(bitIndex);
     }
 
@@ -127,8 +214,8 @@ public class Bitmap {
      * @throws IndexOutOfBoundsException if bitIndex specifies a bit not in the
      * range being tracked.
      */
-    public void clear(final int bitIndex) {
-
+    public void clear(final long bitIndex) {
+        checkBitIndex( bitIndex );
         Integer entryIdx = Integer.valueOf(getLongIndex(bitIndex));
         Entry entry = entries.get(entryIdx);
         if (entry != null) {
@@ -139,60 +226,8 @@ public class Bitmap {
         }
     }
 
-    public PrimitiveIterator.OfInt iterator() {
+    public PrimitiveIterator.OfLong iterator() {
         return new Iter();
-    }
-
-    /**
-     * Gets the filter index for the specified bit index assuming the filter is
-     * using 64-bit longs to store bits starting at index 0.
-     *
-     * <p>
-     * The index is assumed to be positive. For a positive index the result will
-     * match {@code bitIndex / 64}.
-     * </p>
-     *
-     * <p>
-     * <em>The divide is performed using bit shifts. If the input is negative the
-     * behavior is not defined.</em>
-     * </p>
-     *
-     * @param bitIndex the bit index (assumed to be positive)
-     * @return the index of the bit map in an array of bit maps.
-     */
-    public static int getLongIndex(final int bitIndex) {
-        // An integer divide by 64 is equivalent to a shift of 6 bits if the integer is
-        // positive.
-        // We do not explicitly check for a negative here. Instead we use a
-        // signed shift. Any negative index will produce a negative value
-        // by sign-extension and if used as an index into an array it will throw an
-        // exception.
-        return bitIndex >> DIVIDE_BY_64;
-    }
-
-    /**
-     * Gets the filter bit mask for the specified bit index assuming the filter is
-     * using 64-bit longs to store bits starting at index 0. The returned value is a
-     * {@code long} with only 1 bit set.
-     *
-     * <p>
-     * The index is assumed to be positive. For a positive index the result will
-     * match {@code 1L << (bitIndex % 64)}.
-     * </p>
-     *
-     * <p>
-     * <em>If the input is negative the behavior is not defined.</em>
-     * </p>
-     *
-     * @param bitIndex the bit index (assumed to be positive)
-     * @return the filter bit
-     */
-    public static long getLongBit(final int bitIndex) {
-        // Bit shifts only use the first 6 bits. Thus it is not necessary to mask this
-        // using 0x3f (63) or compute bitIndex % 64.
-        // Note: If the index is negative the shift will be (64 - (bitIndex & 0x3f)) and
-        // this will identify an incorrect bit.
-        return 1L << bitIndex;
     }
 
     public static class Entry implements Comparable<Entry> {
@@ -214,7 +249,7 @@ public class Bitmap {
             return Integer.compareUnsigned(index, arg0.index);
         }
 
-        public boolean contains(int bitIndex) {
+        public boolean contains(long bitIndex) {
             return (this.bitMap & getLongBit(bitIndex)) != 0;
         }
 
@@ -229,7 +264,7 @@ public class Bitmap {
          * @throws IndexOutOfBoundsException if bitIndex specifies a bit not in the
          * range being tracked.
          */
-        public void set(final int bitIndex) {
+        public void set(final long bitIndex) {
             this.bitMap |= getLongBit(bitIndex);
         }
 
@@ -244,7 +279,7 @@ public class Bitmap {
          * @throws IndexOutOfBoundsException if bitIndex specifies a bit not in the
          * range being tracked.
          */
-        public void clear(final int bitIndex) {
+        public void clear(final long bitIndex) {
             this.bitMap &= ~getLongBit(bitIndex);
         }
 
@@ -277,10 +312,10 @@ public class Bitmap {
         }
     }
 
-    private class Iter implements PrimitiveIterator.OfInt {
+    private class Iter implements PrimitiveIterator.OfLong {
         Iterator<Entry> iterE = entries.values().iterator();
         Entry entry = null;
-        PrimitiveIterator.OfInt idxIter = null;
+        PrimitiveIterator.OfLong idxIter = null;
 
         @Override
         public boolean hasNext() {
@@ -290,15 +325,15 @@ public class Bitmap {
             return idxIter.hasNext();
         }
 
-        private PrimitiveIterator.OfInt nextIdxIter() {
+        private PrimitiveIterator.OfLong nextIdxIter() {
             entry = nextEntry();
             return new IdxIter();
         }
 
-        private class IdxIter implements PrimitiveIterator.OfInt {
+        private class IdxIter implements PrimitiveIterator.OfLong {
             final int[] values;
             int pos;
-            final int offset;
+            final int offset;  // max offset is Integer.MAX_VALUE
 
             IdxIter() {
                 if (entry == null) {
@@ -317,8 +352,8 @@ public class Bitmap {
             }
 
             @Override
-            public int nextInt() {
-                return values[pos++] + offset;
+            public long nextLong() {
+                return values[pos++] + Integer.toUnsignedLong(offset);
             }
         }
 
@@ -330,8 +365,8 @@ public class Bitmap {
         }
 
         @Override
-        public int nextInt() {
-            return idxIter.nextInt();
+        public long nextLong() {
+            return idxIter.nextLong();
         }
     }
 }
