@@ -16,7 +16,7 @@ public class GraphImpl extends GraphBase {
     URIs uris = new URIs();
     NumberIdx numbers = new NumberIdx();
     LangIdx lang = new LangIdx();
-    //TextIdx text = null;
+    // TextIdx text = null;
 
     @Override
     protected ExtendedIterator<Triple> graphBaseFind(Triple triplePattern) {

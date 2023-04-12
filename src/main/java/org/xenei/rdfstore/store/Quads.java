@@ -51,7 +51,7 @@ public class Quads {
         if (use >= 0) {
             deleted.clear(use);
             FixedSizeGatedList<Quad> fsgl = lists.get((int) (use / pageSize));
-            return fsgl.put((int)(use % pageSize), bf, quad);
+            return fsgl.put((int) (use % pageSize), bf, quad);
         }
         // no deleted entries available
         FixedSizeGatedList<Quad> sfgl = lists.get(lists.size() - 1);
