@@ -4,15 +4,25 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.PrimitiveIterator;
 import java.util.TreeMap;
+import java.util.Comparator;
 
 import org.apache.commons.collections4.bloomfilter.BitMapProducer;
 import org.apache.commons.collections4.bloomfilter.IndexProducer;
 
 public class Bitmap {
+    public static final long MAX_UNSIGNED_INT = 0xFFFF_FFFFL;
     
-    public static final long MAX_INDEX = (64L*Integer.MAX_VALUE)+63;
-
-    TreeMap<Integer, Entry> entries = new TreeMap<Integer, Entry>();
+    public static final long MAX_INDEX = Long.SIZE * MAX_UNSIGNED_INT + 63;
+    
+    private static Comparator<Integer> UNSIGNED_COMPARATOR = new Comparator<Integer>() {
+        @Override
+        public int compare(Integer arg0, Integer arg1) {
+            return Integer.compareUnsigned(arg0,  arg1);
+        }
+        
+    };
+    
+    TreeMap<Integer, Entry> entries = new TreeMap<Integer, Entry>(UNSIGNED_COMPARATOR);
 
     /**
      * Calculates the union of the bitmap arguments.
@@ -178,7 +188,7 @@ public class Bitmap {
                 throw new IllegalStateException("Bit count too large");
             }
         }
-        return entry.getKey().intValue() * 64 + result;
+        return Integer.toUnsignedLong(entry.getKey().intValue()) * 64 + result;
     }
 
     /**
@@ -333,17 +343,18 @@ public class Bitmap {
         private class IdxIter implements PrimitiveIterator.OfLong {
             final int[] values;
             int pos;
-            final int offset;  // max offset is Integer.MAX_VALUE
+            final long offset;  // max offset is MAX_UNSIGNED_INT
 
             IdxIter() {
                 if (entry == null) {
                     values = new int[0];
+                    offset = 0;
                 } else {
                     values = IndexProducer.fromBitMapProducer(BitMapProducer.fromBitMapArray(entry.bitMap))
                             .asIndexArray();
+                    offset = Integer.toUnsignedLong(entry.index) * Long.SIZE;
                 }
                 pos = 0;
-                offset = entry.index.intValue();
             }
 
             @Override
@@ -353,7 +364,7 @@ public class Bitmap {
 
             @Override
             public long nextLong() {
-                return values[pos++] + Integer.toUnsignedLong(offset);
+                return values[pos++] + offset;
             }
         }
 
