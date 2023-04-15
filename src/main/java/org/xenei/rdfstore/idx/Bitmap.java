@@ -168,10 +168,13 @@ public class Bitmap {
         return entry == null ? false : entry.contains(bitIndex);
     }
 
+    public boolean isEmpty() {
+        return entries.isEmpty();
+    }
     /**
      * Returns the index of the lowest enabled bit.
      * 
-     * @return the index of the lowest enabled bit.
+     * @return the index of the lowest enabled bit or -1L none are set.
      */
     public long lowest() {
         if (entries.isEmpty()) {

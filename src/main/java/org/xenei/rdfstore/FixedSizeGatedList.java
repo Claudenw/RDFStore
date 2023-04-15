@@ -30,11 +30,11 @@ public class FixedSizeGatedList<T> {
         return (part1 << Integer.SIZE) | part2;
     }
 
-    public GatedList.Result register(BloomFilter filter, T item) {
+    public Store.Result register(BloomFilter filter, T item) {
         if (gatekeeper.contains(filter)) {
             for (int i = 0; i < list.size(); i++) {
                 if (item.equals(list.get(i))) {
-                    return new GatedList.Result(true, toLong(item.hashCode(), i));
+                    return new Store.Result(true, toLong(item.hashCode(), i));
                 }
             }
         }
@@ -42,9 +42,9 @@ public class FixedSizeGatedList<T> {
             // add the entry
             gatekeeper.merge(filter);
             list.add(item);
-            return new GatedList.Result(false, toLong(item.hashCode(), list.size() - 1));
+            return new Store.Result(false, toLong(item.hashCode(), list.size() - 1));
         }
-        return new GatedList.Result(false, -1);
+        return new Store.Result(false, -1);
     }
 
     public void remove(int space) {
@@ -55,24 +55,24 @@ public class FixedSizeGatedList<T> {
         return list.get(space);
     }
 
-    public GatedList.Result put(int space, BloomFilter filter, T item) {
+    public Store.Result put(int space, BloomFilter filter, T item) {
         list.set(space, item);
         gatekeeper.merge(filter);
         if (gatekeeper.estimateN() > (this.maxCount * 1.1)) {
             recalcGatekeeper();
         }
-        return new GatedList.Result(false, space);
+        return new Store.Result(false, space);
     }
 
-    public GatedList.Result contains(BloomFilter filter, T item) {
+    public Store.Result contains(BloomFilter filter, T item) {
         if (gatekeeper.contains(filter)) {
             for (int i = 0; i < list.size(); i++) {
                 if (item.equals(list.get(i))) {
-                    return new GatedList.Result(true, toLong(item.hashCode(), i));
+                    return new Store.Result(true, toLong(item.hashCode(), i));
                 }
             }
         }
-        return new GatedList.Result(false, -1);
+        return new Store.Result(false, -1);
     }
 
     public int size() {

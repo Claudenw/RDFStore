@@ -11,7 +11,7 @@ import org.apache.commons.collections4.bloomfilter.SimpleBloomFilter;
 import org.apache.jena.graph.Triple;
 import org.apache.jena.sparql.core.Quad;
 import org.xenei.rdfstore.FixedSizeGatedList;
-import org.xenei.rdfstore.GatedList;
+import org.xenei.rdfstore.Store;
 import org.xenei.rdfstore.idx.Bitmap;
 
 public class Quads {
@@ -28,11 +28,11 @@ public class Quads {
         lists.add(new FixedSizeGatedList<>(shape, pageSize));
     }
 
-    public GatedList.Result register(Triple triple) {
+    public Store.Result register(Triple triple) {
         return register(Quad.create(Quad.defaultGraphNodeGenerated, triple));
     }
 
-    public GatedList.Result register(Quad quad) {
+    public Store.Result register(Quad quad) {
         if (quad.isTriple()) {
             return register(quad.asTriple());
         }
@@ -41,7 +41,7 @@ public class Quads {
         bf.merge(FixedSizeGatedList.createHasher(quad));
 
         for (FixedSizeGatedList<Quad> sfgl : lists) {
-            GatedList.Result result = sfgl.contains(bf, quad);
+            Store.Result result = sfgl.contains(bf, quad);
             if (result.existed) {
                 return result;
             }
@@ -62,11 +62,11 @@ public class Quads {
         return sfgl.register(bf, quad);
     }
 
-    public GatedList.Result remove(Triple triple) {
+    public Store.Result remove(Triple triple) {
         return remove(Quad.create(Quad.defaultGraphNodeGenerated, triple));
     }
 
-    public GatedList.Result remove(Quad quad) {
+    public Store.Result remove(Quad quad) {
         if (quad.isTriple()) {
             return remove(quad.asTriple());
         }
@@ -75,14 +75,14 @@ public class Quads {
         bf.merge(FixedSizeGatedList.createHasher(quad));
 
         for (FixedSizeGatedList<Quad> sfgl : lists) {
-            GatedList.Result result = sfgl.contains(bf, quad);
+            Store.Result result = sfgl.contains(bf, quad);
             if (result.existed) {
                 deleted.set((int) result.value);
                 sfgl.remove((int) (result.value % pageSize));
                 return result;
             }
         }
-        return new GatedList.Result(false, -1);
+        return new Store.Result(false, -1);
 
     }
 

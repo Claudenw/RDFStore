@@ -4,7 +4,7 @@ import org.apache.jena.graph.Triple;
 import org.apache.jena.graph.impl.GraphBase;
 import org.apache.jena.util.iterator.ExtendedIterator;
 import org.apache.jena.util.iterator.WrappedIterator;
-import org.xenei.rdfstore.GatedList;
+import org.xenei.rdfstore.Store;
 import org.xenei.rdfstore.idx.LangIdx;
 import org.xenei.rdfstore.idx.NumberIdx;
 import org.xenei.rdfstore.store.Quads;
@@ -35,7 +35,7 @@ public class GraphImpl extends GraphBase {
      */
     @Override
     public void performAdd(Triple t) {
-        GatedList.Result tripleIdx = quads.register(t);
+        Store.Result tripleIdx = quads.register(t);
         if (!tripleIdx.existed) {
             uris.register(t, (int) tripleIdx.value);
         }
@@ -48,7 +48,7 @@ public class GraphImpl extends GraphBase {
      */
     @Override
     public void performDelete(Triple t) {
-        GatedList.Result tripleIdx = quads.remove(t);
+        Store.Result tripleIdx = quads.remove(t);
         if (!tripleIdx.existed) {
             uris.unregister(t, (int) tripleIdx.value);
         }

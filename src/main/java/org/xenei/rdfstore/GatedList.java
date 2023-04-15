@@ -14,16 +14,6 @@ public class GatedList<T> {
     BloomFilter gatekeeper;
     List<T> list;
 
-    public static class Result {
-        public final boolean existed;
-        public final long value;
-
-        public Result(boolean existed, long value) {
-            this.existed = existed;
-            this.value = value;
-        }
-    }
-
     public GatedList() {
         maxCount = 1000;
         gatekeeper = new SimpleBloomFilter(Shape.fromNP(maxCount, 1.0 / maxCount));
@@ -34,13 +24,13 @@ public class GatedList<T> {
         return (part1 << Integer.SIZE) | part2;
     }
 
-    public Result register(T item) {
+    public Store.Result register(T item) {
         int hashCode = item.hashCode();
         Hasher hasher = new EnhancedDoubleHasher((hashCode & 0xFFFF0000), (hashCode & 0xFFFF));
         if (gatekeeper.contains(hasher)) {
             for (int i = 0; i < list.size(); i++) {
                 if (item.equals(list.get(i))) {
-                    return new Result(true, toLong(hashCode, i));
+                    return new Store.Result(true, toLong(hashCode, i));
                 }
             }
         } // add the entry
@@ -50,7 +40,7 @@ public class GatedList<T> {
             maxCount += 1000;
             recalcGatekeeper();
         }
-        return new Result(false, toLong(hashCode, list.size() - 1));
+        return new Store.Result(false, toLong(hashCode, list.size() - 1));
     }
 
     public boolean contains(T item) {

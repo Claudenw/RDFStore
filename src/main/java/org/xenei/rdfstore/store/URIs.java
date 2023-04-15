@@ -1,13 +1,19 @@
 package org.xenei.rdfstore.store;
 
-import org.apache.commons.collections4.trie.PatriciaTrie;
 import org.apache.jena.graph.Node;
 import org.apache.jena.graph.NodeFactory;
 import org.apache.jena.graph.Triple;
+import org.apache.jena.rdf.model.RDFNode;
+import org.xenei.rdfstore.Store;
+import org.xenei.rdfstore.TrieStore;
+import org.xenei.rdfstore.idx.LangIdx;
+import org.xenei.rdfstore.idx.NumberIdx;
 import org.xenei.rdfstore.idx.Bitmap;
 
-public class URIs {
-    private PatriciaTrie<Result> trie = new PatriciaTrie<>();
+public class URIs implements Store<RDFNode,Bitmap> {
+    private TrieStore<RDFNode> store;
+    private NumberIdx numbers = new NumberIdx();
+    private LangIdx languages = new LangIdx();
 
     public static class Result {
 
