@@ -19,7 +19,6 @@ public class Bitmap {
         public int compare(Integer arg0, Integer arg1) {
             return Integer.compareUnsigned(arg0, arg1);
         }
-
     };
 
     TreeMap<Integer, Entry> entries = new TreeMap<Integer, Entry>(UNSIGNED_COMPARATOR);

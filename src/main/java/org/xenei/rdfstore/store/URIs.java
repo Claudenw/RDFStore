@@ -1,17 +1,15 @@
 package org.xenei.rdfstore.store;
 
 import org.apache.jena.graph.Node;
-import org.apache.jena.graph.NodeFactory;
-import org.apache.jena.graph.Triple;
-import org.apache.jena.rdf.model.RDFNode;
+import org.apache.jena.graph.impl.LiteralLabel;
 import org.xenei.rdfstore.Store;
 import org.xenei.rdfstore.TrieStore;
 import org.xenei.rdfstore.idx.LangIdx;
 import org.xenei.rdfstore.idx.NumberIdx;
 import org.xenei.rdfstore.idx.Bitmap;
 
-public class URIs implements Store<RDFNode,Bitmap> {
-    private TrieStore<RDFNode> store;
+public class URIs {
+    private TrieStore<Node> store;
     private NumberIdx numbers = new NumberIdx();
     private LangIdx languages = new LangIdx();
 
@@ -39,11 +37,7 @@ public class URIs implements Store<RDFNode,Bitmap> {
         }
     }
 
-    public URIs.Result register(String uri) {
-        return register(NodeFactory.createURI(uri));
-    }
-
-    private String asString(Node node) {
+    /*private String asString(Node node) {
         if (node.isLiteral()) {
             return node.getURI();
         }
@@ -55,42 +49,28 @@ public class URIs implements Store<RDFNode,Bitmap> {
         }
         return node.toString(true);
     }
-
-    public URIs.Result register(Node node) {
-        if (node == null) {
-            return new URIs.Result();
+*/
+    private int asInt(long l) {
+        return (int)l;
+    }
+    
+    public long register(Node node) {
+        //String key = asString(node);
+        Store.Result result = store.register(node);
+        if (result.existed == false) {
+            if (node.isLiteral()) {
+                
+                LiteralLabel label = node.getLiteral();
+                if (label.isXML()) {
+                    if (Number.class.isAssignableFrom(label.getDatatype().getJavaClass())) {
+                        numbers.register((Number) label.getValue(), asInt(result.value));
+                    }
+                } else {
+                    languages.register(node.getLiteral().language(), asInt(result.value));
+                } 
+            }
         }
-        String key = asString(node);
-        Result result = trie.get(key);
-        if (result == null) {
-            result = new URIs.Result();
-            trie.put(key, result);
-        }
-        return result;
+        return result.value;
     }
 
-    public void register(Triple t, int idx) {
-        register(Idx.S.from(t)).set(Idx.S, idx);
-        register(Idx.P.from(t)).set(Idx.P, idx);
-        register(Idx.O.from(t)).set(Idx.O, idx);
-    }
-
-    public void unregister(Triple t, int idx) {
-        register(Idx.S.from(t)).clear(Idx.S, idx);
-        register(Idx.P.from(t)).clear(Idx.P, idx);
-        register(Idx.O.from(t)).clear(Idx.O, idx);
-    }
-
-    public Bitmap get(Triple t) {
-        Node n = Idx.S.from(t);
-        Bitmap result = (n != null) ? null : register(n).get(Idx.S);
-
-        n = Idx.P.from(t);
-        Bitmap other = n != null ? null : register(n).get(Idx.P);
-        result = result == null ? Bitmap.intersection(result, other) : other;
-
-        n = Idx.O.from(t);
-        other = n != null ? null : register(n).get(Idx.O);
-        return result == null ? Bitmap.intersection(result, other) : other;
-    }
 }

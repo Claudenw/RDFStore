@@ -44,6 +44,4 @@ public class LangIdx implements Index<String> {
     public int size() {
         return map.size();
     }
-
-    
 }
