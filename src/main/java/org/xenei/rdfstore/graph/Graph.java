@@ -5,7 +5,7 @@ import org.apache.jena.graph.impl.GraphBase;
 import org.apache.jena.util.iterator.ExtendedIterator;
 import org.xenei.rdfstore.store.Quads;
 
-public class GraphImpl extends GraphBase {
+public class Graph extends GraphBase {
 
     Quads quads = new Quads();
 
