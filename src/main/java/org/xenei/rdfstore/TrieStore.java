@@ -1,32 +1,30 @@
 package org.xenei.rdfstore;
 
+import java.util.Iterator;
+import java.util.function.Function;
+
+import org.apache.commons.collections4.Trie;
 import org.apache.commons.collections4.trie.PatriciaTrie;
 import org.xenei.rdfstore.idx.Bitmap;
 
-import java.util.List;
-import java.util.function.Function;
-import java.util.ArrayList;
-import java.util.Iterator;
+public class TrieStore<T> implements Store<T, Store.Result> {
 
-import org.apache.commons.collections4.Trie;
-
-public class TrieStore<T> implements Store<T,Store.Result> {
-   
-    private final List<T> lst;
-    private final Trie<String,IdxData<T>> trie;
+    private final LongList<T> lst;
+    private final Trie<String, IdxData<T>> trie;
     private final Bitmap deleted;
-    private final Function<T,String> keyFunc;
-    
+    private final Function<T, String> keyFunc;
+
     public TrieStore() {
         this(String::valueOf);
     }
-    public TrieStore(Function<T,String> keyFunc) {
-        lst = new ArrayList<T>();
+
+    public TrieStore(Function<T, String> keyFunc) {
+        lst = new LongList<T>();
         trie = new PatriciaTrie<IdxData<T>>();
         deleted = new Bitmap();
         this.keyFunc = keyFunc;
     }
-    
+
     @Override
     public Result register(T item) {
         String key = keyFunc.apply(item);
@@ -36,16 +34,16 @@ public class TrieStore<T> implements Store<T,Store.Result> {
             if (deletedIdx == -1) {
                 lst.add(item);
                 entry = new IdxData<T>(lst.size(), item);
-                trie.put( key, entry);
+                trie.put(key, entry);
             } else {
-                deleted.clear( deletedIdx );
-                entry = new IdxData<T>((int)deletedIdx, item);
-                lst.set( (int)entry.idx, item );
-                trie.put( key, entry);
+                deleted.clear(deletedIdx);
+                entry = new IdxData<T>((int) deletedIdx, item);
+                lst.set((int) entry.idx, item);
+                trie.put(key, entry);
             }
-            return new Result( false, entry.idx);
+            return new Result(false, entry.idx);
         }
-        return new Result( true, entry.idx);
+        return new Result(true, entry.idx);
     }
 
     @Override
@@ -53,28 +51,31 @@ public class TrieStore<T> implements Store<T,Store.Result> {
         String key = keyFunc.apply(item);
         IdxData<T> idxData = trie.remove(key);
         if (idxData == null) {
-            return new Result( false, -1 );
+            return new Result(false, -1);
         }
-        deleted.set( idxData.idx );
-        lst.set((int)idxData.idx, null);
-        return new Result( true, idxData.idx);
+        deleted.set(idxData.idx);
+        lst.set((int) idxData.idx, null);
+        return new Result(true, idxData.idx);
     }
 
     @Override
     public boolean contains(T item) {
-        return trie.containsKey( keyFunc.apply(item) );
+        return trie.containsKey(keyFunc.apply(item));
     }
-    
 
-    
     @Override
     public long size() {
         return trie.size();
     }
+
     @Override
     public Iterator<IdxData<T>> iterator() {
         return trie.values().iterator();
     }
 
+    @Override
+    public T get(long idx) {
+        return lst.get(idx);
+    }
 
 }

@@ -170,6 +170,7 @@ public class Bitmap {
     public boolean isEmpty() {
         return entries.isEmpty();
     }
+
     /**
      * Returns the index of the lowest enabled bit.
      * 

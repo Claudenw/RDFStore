@@ -3,29 +3,21 @@ package org.xenei.rdfstore.graph;
 import org.apache.jena.graph.Triple;
 import org.apache.jena.graph.impl.GraphBase;
 import org.apache.jena.util.iterator.ExtendedIterator;
-import org.apache.jena.util.iterator.WrappedIterator;
-import org.xenei.rdfstore.Store;
-import org.xenei.rdfstore.idx.LangIdx;
-import org.xenei.rdfstore.idx.NumberIdx;
 import org.xenei.rdfstore.store.Quads;
-import org.xenei.rdfstore.store.URIs;
 
 public class GraphImpl extends GraphBase {
 
     Quads quads = new Quads();
-    URIs uris = new URIs();
-    NumberIdx numbers = new NumberIdx();
-    LangIdx lang = new LangIdx();
-    // TextIdx text = null;
 
     @Override
     protected ExtendedIterator<Triple> graphBaseFind(Triple triplePattern) {
-        return WrappedIterator.create(quads.iterator(uris.get(triplePattern).iterator())).mapWith(q -> q.asTriple());
+        return quads.find(triplePattern);
     }
 
     @Override
     protected int graphBaseSize() {
-        return quads.size();
+        long size = quads.size();
+        return quads.size() > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) size;
     }
 
     /**
@@ -35,10 +27,7 @@ public class GraphImpl extends GraphBase {
      */
     @Override
     public void performAdd(Triple t) {
-        Store.Result tripleIdx = quads.register(t);
-        if (!tripleIdx.existed) {
-            uris.register(t, (int) tripleIdx.value);
-        }
+        quads.register(t);
     }
 
     /**
@@ -48,10 +37,7 @@ public class GraphImpl extends GraphBase {
      */
     @Override
     public void performDelete(Triple t) {
-        Store.Result tripleIdx = quads.remove(t);
-        if (!tripleIdx.existed) {
-            uris.unregister(t, (int) tripleIdx.value);
-        }
+        quads.delete(t);
     }
 
 }

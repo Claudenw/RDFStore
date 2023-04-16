@@ -4,9 +4,9 @@ import org.apache.jena.graph.Node;
 import org.apache.jena.graph.impl.LiteralLabel;
 import org.xenei.rdfstore.Store;
 import org.xenei.rdfstore.TrieStore;
+import org.xenei.rdfstore.idx.Bitmap;
 import org.xenei.rdfstore.idx.LangIdx;
 import org.xenei.rdfstore.idx.NumberIdx;
-import org.xenei.rdfstore.idx.Bitmap;
 
 public class URIs {
     private TrieStore<Node> store;
@@ -49,17 +49,17 @@ public class URIs {
         }
         return node.toString(true);
     }
-*/
+    */
     private int asInt(long l) {
-        return (int)l;
+        return (int) l;
     }
-    
+
     public long register(Node node) {
-        //String key = asString(node);
+        // String key = asString(node);
         Store.Result result = store.register(node);
-        if (result.existed == false) {
+        if (!result.existed) {
             if (node.isLiteral()) {
-                
+
                 LiteralLabel label = node.getLiteral();
                 if (label.isXML()) {
                     if (Number.class.isAssignableFrom(label.getDatatype().getJavaClass())) {
@@ -67,10 +67,14 @@ public class URIs {
                     }
                 } else {
                     languages.register(node.getLiteral().language(), asInt(result.value));
-                } 
+                }
             }
         }
         return result.value;
+    }
+
+    public Node get(long idx) {
+        return store.get(idx);
     }
 
 }

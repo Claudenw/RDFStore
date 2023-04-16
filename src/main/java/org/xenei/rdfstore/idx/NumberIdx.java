@@ -6,14 +6,14 @@ import java.util.Map;
 import org.xenei.rdfstore.IdxData;
 
 public class NumberIdx implements Index<Number> {
-    
-    Map<Number,IdxData<Bitmap>> map = new HashMap<>();
+
+    Map<Number, IdxData<Bitmap>> map = new HashMap<>();
 
     @Override
     public Bitmap register(Number item, int id) {
         IdxData<Bitmap> idx = map.get(item);
         if (idx == null) {
-            idx = new IdxData<Bitmap>( id, new Bitmap() );
+            idx = new IdxData<Bitmap>(id, new Bitmap());
         }
         idx.data.set(id);
         return idx.data;
@@ -24,9 +24,8 @@ public class NumberIdx implements Index<Number> {
         IdxData<Bitmap> idx = map.get(item);
         if (idx != null) {
             idx.data.clear(id);
-            if (idx.data.isEmpty())
-            {
-                map.remove(item,idx);
+            if (idx.data.isEmpty()) {
+                map.remove(item, idx);
             }
         }
     }
@@ -34,7 +33,7 @@ public class NumberIdx implements Index<Number> {
     @Override
     public Bitmap get(Number item) {
         IdxData<Bitmap> idx = map.get(item);
-        return idx == null?new Bitmap():idx.data;
+        return idx == null ? new Bitmap() : idx.data;
     }
 
     @Override
@@ -42,4 +41,3 @@ public class NumberIdx implements Index<Number> {
         return map.size();
     }
 }
-
