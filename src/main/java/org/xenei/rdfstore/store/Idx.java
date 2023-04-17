@@ -41,11 +41,23 @@ public enum Idx {
      * @return the node or null (not Node.ANY)
      */
     public Node from(Quad q) {
+        Node result = null;
         switch (this) {
         case G:
-            return q.getGraph();
+            result =  q.getGraph();
+            break;
+        case S:
+            result = q.getSubject();
+            break;
+        case P:
+            result = q.getPredicate();
+            break;
+        case O:
+            result = q.getObject();
+            break;
         default:
-            return from(q.asTriple());
+            return null;
         }
+        return result == Node.ANY ? null : result;
     }
 }

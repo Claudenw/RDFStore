@@ -1,4 +1,4 @@
-package org.xenei.rdfstore.graph;
+package org.xenei.rdfstore.jena;
 
 import org.apache.jena.graph.Triple;
 import org.apache.jena.graph.impl.GraphBase;

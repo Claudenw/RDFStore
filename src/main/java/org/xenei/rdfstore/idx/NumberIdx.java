@@ -5,12 +5,17 @@ import java.util.Map;
 
 import org.xenei.rdfstore.IdxData;
 
+/**
+ * An index of numbers to uri indices.
+ */
 public class NumberIdx implements Index<Number> {
 
     Map<Number, IdxData<Bitmap>> map = new HashMap<>();
 
+    
     @Override
-    public Bitmap register(Number item, int id) {
+    public Bitmap register(Number item, long id) {
+        checkIndex( id, Integer.MAX_VALUE );
         IdxData<Bitmap> idx = map.get(item);
         if (idx == null) {
             idx = new IdxData<Bitmap>(id, new Bitmap());
@@ -20,7 +25,8 @@ public class NumberIdx implements Index<Number> {
     }
 
     @Override
-    public void delete(Number item, int id) {
+    public void delete(Number item, long id) {
+        checkIndex( id, Integer.MAX_VALUE );
         IdxData<Bitmap> idx = map.get(item);
         if (idx != null) {
             idx.data.clear(id);
@@ -37,7 +43,7 @@ public class NumberIdx implements Index<Number> {
     }
 
     @Override
-    public int size() {
+    public long size() {
         return map.size();
     }
 }

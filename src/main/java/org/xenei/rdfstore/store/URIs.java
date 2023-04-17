@@ -9,7 +9,7 @@ import org.xenei.rdfstore.idx.LangIdx;
 import org.xenei.rdfstore.idx.NumberIdx;
 
 public class URIs {
-    private TrieStore<Node> store;
+    private TrieStore<Node> store = new TrieStore<Node>( URIs::asString );
     private NumberIdx numbers = new NumberIdx();
     private LangIdx languages = new LangIdx();
 
@@ -37,8 +37,8 @@ public class URIs {
         }
     }
 
-    /*private String asString(Node node) {
-        if (node.isLiteral()) {
+    private static String asString(Node node) {
+        if (node.isURI()) {
             return node.getURI();
         }
         if (node.isLiteral()) {
@@ -49,7 +49,7 @@ public class URIs {
         }
         return node.toString(true);
     }
-    */
+    
     private int asInt(long l) {
         return (int) l;
     }
@@ -63,14 +63,14 @@ public class URIs {
                 LiteralLabel label = node.getLiteral();
                 if (label.isXML()) {
                     if (Number.class.isAssignableFrom(label.getDatatype().getJavaClass())) {
-                        numbers.register((Number) label.getValue(), asInt(result.value));
+                        numbers.register((Number) label.getValue(), asInt(result.index));
                     }
                 } else {
-                    languages.register(node.getLiteral().language(), asInt(result.value));
+                    languages.register(node.getLiteral().language(), asInt(result.index));
                 }
             }
         }
-        return result.value;
+        return result.index;
     }
 
     public Node get(long idx) {

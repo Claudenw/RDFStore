@@ -7,17 +7,25 @@ import org.apache.commons.collections4.Trie;
 import org.apache.commons.collections4.trie.PatriciaTrie;
 import org.xenei.rdfstore.idx.Bitmap;
 
-public class TrieStore<T> implements Store<T, Store.Result> {
+public class TrieStore<T> implements Store<T> {
 
     private final LongList<T> lst;
     private final Trie<String, IdxData<T>> trie;
     private final Bitmap deleted;
     private final Function<T, String> keyFunc;
 
+    /**
+     * Constructor that uses String::valueOf as the key function.
+     */
     public TrieStore() {
         this(String::valueOf);
     }
 
+    /**
+     * Constructor that accepts key function.
+     * 
+     * @param keyFunc the function to convert the item to a string for the key.
+     */
     public TrieStore(Function<T, String> keyFunc) {
         lst = new LongList<T>();
         trie = new PatriciaTrie<IdxData<T>>();
@@ -32,13 +40,12 @@ public class TrieStore<T> implements Store<T, Store.Result> {
         if (entry == null) {
             long deletedIdx = deleted.lowest();
             if (deletedIdx == -1) {
-                lst.add(item);
-                entry = new IdxData<T>(lst.size(), item);
+                entry = lst.add(item);
                 trie.put(key, entry);
             } else {
                 deleted.clear(deletedIdx);
                 entry = new IdxData<T>((int) deletedIdx, item);
-                lst.set((int) entry.idx, item);
+                lst.set(entry);
                 trie.put(key, entry);
             }
             return new Result(false, entry.idx);
@@ -54,7 +61,7 @@ public class TrieStore<T> implements Store<T, Store.Result> {
             return new Result(false, -1);
         }
         deleted.set(idxData.idx);
-        lst.set((int) idxData.idx, null);
+        lst.set(new IdxData<T>( idxData.idx, null));
         return new Result(true, idxData.idx);
     }
 

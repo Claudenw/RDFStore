@@ -9,6 +9,9 @@ import java.util.TreeMap;
 import org.apache.commons.collections4.bloomfilter.BitMapProducer;
 import org.apache.commons.collections4.bloomfilter.IndexProducer;
 
+/**
+ * Class to handle a large number of bitmaps.
+ */
 public class Bitmap {
     public static final long MAX_UNSIGNED_INT = 0xFFFF_FFFFL;
 
@@ -21,6 +24,9 @@ public class Bitmap {
         }
     };
 
+    /**
+     * A list of entries
+     */
     TreeMap<Integer, Entry> entries = new TreeMap<Integer, Entry>(UNSIGNED_COMPARATOR);
 
     /**
@@ -46,6 +52,11 @@ public class Bitmap {
         return result;
     }
 
+    /**
+     * Calculates the intersecton between a set of bitmaps.
+     * @param maps the bit maps.
+     * @return a bitmap containing the intersection.
+     */
     public static Bitmap intersection(Bitmap... maps) {
         Bitmap result = new Bitmap();
         if (maps.length == 0) {

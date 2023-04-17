@@ -7,38 +7,67 @@ import java.util.function.Function;
 
 import org.apache.commons.collections4.bloomfilter.BloomFilter;
 import org.apache.commons.collections4.bloomfilter.Hasher;
-import org.apache.commons.collections4.bloomfilter.SimpleBloomFilter;
 import org.apache.jena.util.iterator.ExtendedIterator;
 import org.apache.jena.util.iterator.NiceIterator;
 import org.apache.jena.util.iterator.WrappedIterator;
 import org.xenei.rdfstore.idx.Bitmap;
+import org.xenei.rdfstore.pages.BloomFilterPage;
 
-public class LargePagedStore<T> implements Store<T, Store.Result> {
-
-    private final List<StringPage<T>> pages;
-    private final int maxPageSize;
+/**
+ * An n implementation of a paged store that uses a list to track the pages.
+ * Uses Bloom filters on the pages to determine the absence of items. Maximum
+ * Total storage is Integer.MAX_VALUE * Store.MAX_INDEX
+ *
+ * @param <T> The item type being stored.
+ */
+public class ListPagedStore<T> implements Store<T> {
+    /**
+     * The maximum number of items that can be stored in the system.
+     */
+    public static final long MAX_STORAGE = Long.MAX_VALUE;
+    /**
+     * The maximum page size for this implementation.
+     */
+    public static final long MAX_PAGESIZE = Bitmap.MAX_INDEX;
+    /**
+     * A list of pages.
+     */
+    private final List<BloomFilterPage<T>> pages;
+    /**
+     * The maximum page size
+     */
+    private final long maxPageSize;
+    /**
+     * A Bitmap of indicating the pages that have space on them.
+     */
     private final Bitmap hasSpace;
+    /**
+     * A function to convert object of type T into a Hasher of the object.
+     */
     private final Function<T, Hasher> hasherFunc;
 
-    public LargePagedStore(int maxPageSize, Function<T, Hasher> hasherFunc) {
-        this.pages = new ArrayList<StringPage<T>>();
+    /**
+     * 
+     * @param maxPageSize the maximum page size for the store. Must be less than
+     * Integer.MAX_VALUE ^ 2
+     * @param hasherFunc the function to hash
+     */
+    public ListPagedStore(long maxPageSize, Function<T, Hasher> hasherFunc) {
+        if (maxPageSize > MAX_PAGESIZE) {
+            throw new IllegalArgumentException("maxPageSize may not be larger than " + MAX_PAGESIZE);
+        }
+        this.pages = new ArrayList<BloomFilterPage<T>>();
         this.maxPageSize = maxPageSize;
         this.hasSpace = new Bitmap();
         this.hasherFunc = hasherFunc;
     }
 
-    private BloomFilter createFilter(T item) {
-        BloomFilter target = new SimpleBloomFilter(Page.calculateShape(maxPageSize));
-        target.merge(hasherFunc.apply(item));
-        return target;
-    }
-
     @Override
     public Result register(T item) {
-        StringPage<T> page = null;
+        BloomFilterPage<T> page = null;
         long pageNo = hasSpace.lowest();
         if (pageNo == -1) {
-            page = new StringPage<T>(new TrieStore<T>(), maxPageSize, hasherFunc);
+            page = new BloomFilterPage<T>(new TrieStore<T>(), maxPageSize, hasherFunc);
             pages.add(page);
             pageNo = pages.size() - 1;
             hasSpace.set(pageNo);
@@ -46,12 +75,12 @@ public class LargePagedStore<T> implements Store<T, Store.Result> {
             page = pages.get((int) pageNo);
         }
 
-        BloomFilter filter = createFilter(item);
+        BloomFilter filter = page.createFilter(item);
         Result result = page.register(item, filter);
         if (!page.hasSpace()) {
             hasSpace.clear(pageNo);
         }
-        return new Result(result.existed, convertPosition(result.value, pageNo));
+        return new Result(result.existed, convertPosition(result.index, pageNo));
     }
 
     private long convertPosition(long offset, long pageNo) {
@@ -68,13 +97,13 @@ public class LargePagedStore<T> implements Store<T, Store.Result> {
 
     @Override
     public Result delete(T item) {
-        BloomFilter target = createFilter(item);
+        BloomFilter target = BloomFilterPage.createFilter(hasherFunc.apply(item), maxPageSize);
         for (int pageNo = 0; pageNo < pages.size(); pageNo++) {
-            StringPage<T> page = pages.get(pageNo);
+            BloomFilterPage<T> page = pages.get(pageNo);
             Result result = page.delete(item, target);
             if (result.existed) {
                 hasSpace.set(pageNo);
-                return new Result(true, convertPosition(result.value, pageNo));
+                return new Result(true, convertPosition(result.index, pageNo));
             }
         }
         return Store.NO_RESULT;
@@ -82,9 +111,9 @@ public class LargePagedStore<T> implements Store<T, Store.Result> {
 
     @Override
     public boolean contains(T item) {
-        BloomFilter target = createFilter(item);
+        BloomFilter target = BloomFilterPage.createFilter(hasherFunc.apply(item), maxPageSize);
         for (int pageNo = 0; pageNo < pages.size(); pageNo++) {
-            StringPage<T> page = pages.get(pageNo);
+            BloomFilterPage<T> page = pages.get(pageNo);
             if (page.contains(item, target)) {
                 return true;
             }
@@ -95,7 +124,7 @@ public class LargePagedStore<T> implements Store<T, Store.Result> {
     @Override
     public long size() {
         if (hasSpace.isEmpty()) {
-            return pages.size() * (long) maxPageSize;
+            return pages.size() * maxPageSize;
         }
         long result = 0;
         for (int pageNo = 0; pageNo < pages.size(); pageNo++) {
@@ -122,7 +151,7 @@ public class LargePagedStore<T> implements Store<T, Store.Result> {
         if (pageNo > pages.size()) {
             return null;
         }
-        StringPage<T> page = pages.get((int) pageNo);
+        BloomFilterPage<T> page = pages.get((int) pageNo);
         long offset = extractOffset(idx);
         if (offset > page.size()) {
             return null;

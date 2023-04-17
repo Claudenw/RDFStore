@@ -5,12 +5,17 @@ import java.util.Map;
 
 import org.xenei.rdfstore.IdxData;
 
+/**
+ * An index of language strings to URI values.
+ *
+ */
 public class LangIdx implements Index<String> {
 
     Map<String, IdxData<Bitmap>> map = new HashMap<>();
 
     @Override
-    public Bitmap register(String item, int id) {
+    public Bitmap register(String item, long id) {
+        checkIndex( id, Integer.MAX_VALUE );
         IdxData<Bitmap> idx = map.get(item);
         if (idx == null) {
             idx = new IdxData<Bitmap>(id, new Bitmap());
@@ -20,7 +25,8 @@ public class LangIdx implements Index<String> {
     }
 
     @Override
-    public void delete(String item, int id) {
+    public void delete(String item, long id) {
+        checkIndex( id, Integer.MAX_VALUE );
         IdxData<Bitmap> idx = map.get(item);
         if (idx != null) {
             idx.data.clear(id);
@@ -37,7 +43,7 @@ public class LangIdx implements Index<String> {
     }
 
     @Override
-    public int size() {
+    public long size() {
         return map.size();
     }
 }

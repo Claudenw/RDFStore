@@ -1,4 +1,4 @@
-package org.xenei.rdfstore;
+package org.xenei.rdfstore.pages;
 
 import java.util.Iterator;
 import java.util.function.Function;
@@ -7,27 +7,46 @@ import org.apache.commons.collections4.bloomfilter.BloomFilter;
 import org.apache.commons.collections4.bloomfilter.Hasher;
 import org.apache.commons.collections4.bloomfilter.Shape;
 import org.apache.commons.collections4.bloomfilter.SimpleBloomFilter;
+import org.xenei.rdfstore.IdxData;
+import org.xenei.rdfstore.Store;
+import org.xenei.rdfstore.Store.Page;
 import org.xenei.rdfstore.Store.Result;
 
-public class StringPage<T> implements Store.Page<T, Store.Result> {
+public class BloomFilterPage<T> implements Page<T,BloomFilter> {
 
-    private final Store<T, Store.Result> wrapped;
-    private final int maxPageSize;
+    private final Store<T> wrapped;
+    private final long maxPageSize;
     private final Function<T, Hasher> hasherFunc;
     private BloomFilter gatekeeper;
-    private int delCount;
+    private long delCount;
 
-    public static Shape calculateShape(int maxPageSize) {
+    /**
+     * Calculates a Bloom filter shape for based on the maxPageSize
+     * @param maxPageSize the maximum page size
+     * @return the Bloom filter shape for that size page.
+     */
+    public static Shape calculateShape(long maxPageSize) {
         int k = (int) Math.floor(10 + Math.log10(maxPageSize));
         int m = (int) Math.floor(k * maxPageSize / Math.log(2));
         return Shape.fromKM(k, m);
     }
+    
+    public static BloomFilter createFilter(Hasher hasher, long maxPageSize) {
+            BloomFilter target = new SimpleBloomFilter(BloomFilterPage.calculateShape(maxPageSize));
+            target.merge(hasher);
+            return target;
+    }
 
-    public StringPage(Store<T, Store.Result> wrapped, int maxPageSize, Function<T, Hasher> hasherFunc) {
+
+    public BloomFilter createFilter(T item) {
+        return createFilter( hasherFunc.apply(item), maxPageSize );
+    }
+
+    public BloomFilterPage(Store<T> wrapped, long maxPageSize2, Function<T, Hasher> hasherFunc) {
         this.wrapped = wrapped;
-        this.maxPageSize = maxPageSize;
+        this.maxPageSize = maxPageSize2;
         this.hasherFunc = hasherFunc;
-        gatekeeper = new SimpleBloomFilter(calculateShape(maxPageSize));
+        gatekeeper = new SimpleBloomFilter(calculateShape(maxPageSize2));
         delCount = 0;
     }
 
@@ -72,11 +91,6 @@ public class StringPage<T> implements Store.Page<T, Store.Result> {
     @Override
     public long size() {
         return wrapped.size();
-    }
-
-    @Override
-    public boolean mightContain(BloomFilter filter) {
-        return gatekeeper.contains(filter);
     }
 
     @Override

@@ -1,25 +1,32 @@
 package org.xenei.rdfstore.store;
 
 import java.nio.ByteBuffer;
+import java.nio.LongBuffer;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.PrimitiveIterator;
 
 import org.apache.commons.codec.digest.MurmurHash3;
+import org.apache.commons.collections4.bloomfilter.BitMap;
+import org.apache.commons.collections4.bloomfilter.BitMapProducer;
 import org.apache.commons.collections4.bloomfilter.EnhancedDoubleHasher;
 import org.apache.commons.collections4.bloomfilter.Hasher;
+import org.apache.commons.collections4.bloomfilter.IndexProducer;
 import org.apache.jena.graph.Node;
 import org.apache.jena.graph.Triple;
 import org.apache.jena.sparql.core.Quad;
 import org.apache.jena.util.iterator.ExtendedIterator;
 import org.apache.jena.util.iterator.WrappedIterator;
-import org.xenei.rdfstore.LargePagedStore;
+import org.xenei.rdfstore.IdxData;
+import org.xenei.rdfstore.ListPagedStore;
 import org.xenei.rdfstore.LongList;
 import org.xenei.rdfstore.Store;
+import org.xenei.rdfstore.TrieStore;
 import org.xenei.rdfstore.idx.Bitmap;
 
 public class Quads {
     private final URIs uris;
-    private final LargePagedStore<ByteBuffer> store;
+    private final TrieStore<ByteBuffer> store;
     // map of uriIdx to triples.
     private final LongList<Bitmap>[] maps;
 
@@ -38,21 +45,16 @@ public class Quads {
         return new EnhancedDoubleHasher(hash[0], hash[1]);
     }
 
+    @SuppressWarnings("unchecked")
     public Quads() {
         uris = new URIs();
-        int maxPageSize = Store.Page.calculatePageSize(Bitmap.MAX_INDEX);
-        store = new LargePagedStore<ByteBuffer>(maxPageSize, Quads::hashByteBuffer);
+        store = new TrieStore<ByteBuffer>( ByteBuffer::toString );
         maps = new LongList[Idx.values().length];
 
         for (Idx idx : Idx.values()) {
             maps[idx.ordinal()] = new LongList<Bitmap>();
         }
 
-        /* pageSize = 10000;
-        lists = new ArrayList<>();
-        this.shape = Shape.fromNP(pageSize, 1.0 / 20000);
-        lists.add(new FixedSizeGatedList<>(shape, pageSize));
-        */
     }
 
     public long register(Triple triple) {
@@ -64,17 +66,17 @@ public class Quads {
             return register(quad.asTriple());
         }
 
-        IdxQuad idxQ = new IdxQuad(quad);
+        IdxQuad idxQ = new IdxQuad(uris, quad);
         Store.Result result = store.register(idxQ.buffer);
         if (!result.existed) {
             for (Idx idx : Idx.values()) {
                 Bitmap bitmap = new Bitmap();
-                bitmap.set(result.value);
-                maps[idx.ordinal()].set(idxQ.get(idx), bitmap);
+                bitmap.set(result.index);
+                maps[idx.ordinal()].set( new IdxData<Bitmap>(idxQ.get(idx), bitmap));
             }
         }
 
-        return result.value;
+        return result.index;
     }
 
     public void delete(Triple triple) {
@@ -82,7 +84,7 @@ public class Quads {
     }
 
     public void delete(Quad quad) {
-        IdxQuad idxQ = new IdxQuad(quad);
+        IdxQuad idxQ = new IdxQuad(uris, quad);
         Store.Result result = store.delete(idxQ.buffer);
         if (result.existed) {
             for (Idx idx : Idx.values()) {
@@ -99,11 +101,11 @@ public class Quads {
         return find(Quad.create(Quad.defaultGraphNodeGenerated, triplePattern));
     }
 
-    private Bitmap find(Bitmap map, Node n) {
+    private Bitmap merge(Bitmap map, Node n, Idx idx) {
         Bitmap bitmap = null;
-        if (n == null) {
+        if (n != null) {
             long l = uris.register(n);
-            bitmap = maps[Idx.G.ordinal()].get(l);
+            bitmap = maps[idx.ordinal()].get(l);
             if (map == null) {
                 return bitmap;
             }
@@ -119,7 +121,7 @@ public class Quads {
         for (Idx idx : Idx.values()) {
             Node n = idx.from(quadPattern);
             if (n != null) {
-                bitmap = find(bitmap, n);
+                bitmap = merge(bitmap, n, idx);
             }
         }
 
@@ -131,7 +133,8 @@ public class Quads {
         if (bb == null) {
             return null;
         }
-        return new IdxQuad(bb).asTriple();
+        IdxQuad idx = new IdxQuad( bb );
+        return Triple.create(uris.get(idx.get(Idx.S)), uris.get(idx.get(Idx.P)), uris.get(idx.get(Idx.O)));
     }
 
     private class QuadIterator implements Iterator<Triple> {
@@ -160,10 +163,10 @@ public class Quads {
         }
     }
 
-    private class IdxQuad {
-        ByteBuffer buffer;
+    public static class IdxQuad implements Comparable<IdxQuad> {
+        private ByteBuffer buffer;
 
-        IdxQuad(Quad quad) {
+        IdxQuad(URIs uris, Quad quad) {
             buffer = ByteBuffer.allocate(Long.BYTES * 4);
             buffer.putLong(uris.register(Idx.G.from(quad)));
             buffer.putLong(uris.register(Idx.S.from(quad)));
@@ -185,8 +188,15 @@ public class Quads {
             return result;
         }
 
-        Triple asTriple() {
-            return Triple.create(uris.get(get(Idx.S)), uris.get(get(Idx.P)), uris.get(get(Idx.O)));
+        
+        public boolean isBitSet(int bitIndex) {
+            return BitMap.contains(buffer.asLongBuffer().array(), bitIndex);
+        }
+        
+        @Override
+        public int compareTo(IdxQuad other) {
+            return buffer.compareTo(other.buffer);
         }
     }
+    
 }
