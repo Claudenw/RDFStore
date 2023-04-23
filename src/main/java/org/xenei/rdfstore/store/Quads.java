@@ -2,6 +2,7 @@ package org.xenei.rdfstore.store;
 
 import static java.lang.ThreadLocal.withInitial;
 import static org.apache.jena.query.ReadWrite.WRITE;
+import static org.apache.jena.query.ReadWrite.READ;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -10,6 +11,7 @@ import java.util.PrimitiveIterator;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 import org.apache.commons.collections4.bloomfilter.BitMap;
 import org.apache.jena.atlas.lib.InternalErrorException;
@@ -30,6 +32,7 @@ import org.xenei.rdfstore.LongList;
 import org.xenei.rdfstore.Store;
 import org.xenei.rdfstore.TrieStore;
 import org.xenei.rdfstore.idx.Bitmap;
+import org.xenei.rdfstore.txn.TxnExec;
 
 public class Quads implements Transactional, AutoCloseable {
     private final URIs uris;
@@ -37,22 +40,6 @@ public class Quads implements Transactional, AutoCloseable {
     // map of uriIdx to triples.
     private final LongList<Bitmap>[] maps;
 
-//    private static Hasher hashByteBuffer(ByteBuffer buffer) {
-//        long[] hash;
-//        if (buffer.hasArray()) {
-//            hash = MurmurHash3.hash128x64(buffer.array());
-//        } else {
-//            byte[] buff = new byte[buffer.capacity()];
-//            int pos = buffer.position();
-//            buffer.position(0);
-//            buffer.get(buff);
-//            buffer.position(pos);
-//            hash = MurmurHash3.hash128x64(buff);
-//        }
-//        return new EnhancedDoubleHasher(hash[0], hash[1]);
-//    }
-
-    
     @SuppressWarnings("unchecked")
     public Quads() {
         uris = new URIs();
@@ -65,37 +52,37 @@ public class Quads implements Transactional, AutoCloseable {
 
     }
 
-    
-    /** This lock imposes the multiple-reader and single-writer policy of transactions */
+    /**
+     * This lock imposes the multiple-reader and single-writer policy of
+     * transactions
+     */
     private final Lock transactionLock = new LockMRPlusSW();
 
     /**
      * Transaction lifecycle operations must be atomic, especially
      * {@link Transactional#begin} and {@link Transactional#commit}.
      * <p>
-     * There are changes to be made to several datastructures and this
-     * insures that they are made consistently.
+     * There are changes to be made to several datastructures and this insures that
+     * they are made consistently.
      * <p>
-     * Lock order must be writer lock, system lock.
-     * If a transaction takes the writerLock, it is a writer, and there is only one writer.
+     * Lock order must be writer lock, system lock. If a transaction takes the
+     * writerLock, it is a writer, and there is only one writer.
      */
     private final ReentrantLock systemLock = new ReentrantLock(true);
 
     /**
-     * Dataset version.
-     * A write transaction increments this in commit.
+     * Dataset version. A write transaction increments this in commit.
      */
-    private final AtomicLong generation = new AtomicLong(0) ;
+    private final AtomicLong generation = new AtomicLong(0);
     private final ThreadLocal<Long> version = withInitial(() -> 0L);
 
     private final ThreadLocal<Boolean> isInTransaction = withInitial(() -> false);
-    
 
     private final ThreadLocal<TxnType> transactionType = withInitial(() -> null);
     // Current state.
     private final ThreadLocal<ReadWrite> transactionMode = withInitial(() -> null);
 
-    //** TRANSACTION CODE 
+    // ** TRANSACTION CODE
 
     @Override
     public boolean isInTransaction() {
@@ -105,6 +92,7 @@ public class Quads implements Transactional, AutoCloseable {
     protected void isInTransaction(final boolean b) {
         isInTransaction.set(b);
     }
+
     /**
      * @return the current mode of the transaction in progress
      */
@@ -122,11 +110,11 @@ public class Quads implements Transactional, AutoCloseable {
         transactionMode.set(readWrite);
     }
 
-    
     private static void withLock(java.util.concurrent.locks.Lock lock, Runnable action) {
         lock.lock();
-        try { action.run(); }
-        finally {
+        try {
+            action.run();
+        } finally {
             lock.unlock();
         }
     }
@@ -147,31 +135,32 @@ public class Quads implements Transactional, AutoCloseable {
         version.remove();
         transactionLock.leaveCriticalSection();
     }
-    
+
     private void _promote(boolean readCommited) {
         // Outside lock.
-        if ( ! readCommited && version.get() != generation.get() )  {
+        if (!readCommited && version.get() != generation.get()) {
             // This tests for any committed writers since this transaction started.
             // This does not catch the case of a currently active writer
             // that has not gone to commit or abort yet.
             // The final test is after we obtain the transactionLock.
-            throw new JenaTransactionException("Dataset changed - can't promote") ;
+            throw new JenaTransactionException("Dataset changed - can't promote");
         }
 
         // Blocking on other writers.
         transactionLock.enterCriticalSection(Lock.WRITE);
         // Check again now we are inside the lock.
-        if ( ! readCommited && version.get() != generation.get() )  {
-                // Can't promote - release the lock.
-                transactionLock.leaveCriticalSection();
-                throw new JenaTransactionException("Concurrent writer changed the dataset : can't promote") ;
-            }
+        if (!readCommited && version.get() != generation.get()) {
+            // Can't promote - release the lock.
+            transactionLock.leaveCriticalSection();
+            throw new JenaTransactionException("Concurrent writer changed the dataset : can't promote");
+        }
         // We have the writer lock and we have promoted!
-        withLock(systemLock, ()->{
-            Arrays.stream(maps).forEach( t -> t.begin(WRITE) );
-//            defaultGraph().begin(WRITE);
+        withLock(systemLock, () -> {
+            Arrays.stream(maps).forEach(t -> t.begin(WRITE));
+            store.begin(WRITE);
+            uris.begin(WRITE);
             transactionMode(WRITE);
-            if ( readCommited )
+            if (readCommited)
                 version.set(generation.get());
         });
     }
@@ -186,22 +175,22 @@ public class Quads implements Transactional, AutoCloseable {
     private void _begin(TxnType txnType, ReadWrite readWrite) {
         // Takes Writer lock first, then system lock.
         startTransaction(txnType, readWrite);
-        withLock(systemLock, () ->{
-            Arrays.stream(maps).forEach( t -> t.begin(readWrite) );
-//            languages.begin(readWrite);
-//            store.begin(readWrite);
+        withLock(systemLock, () -> {
+            Arrays.stream(maps).forEach(t -> t.begin(readWrite));
+            store.begin(WRITE);
+            uris.begin(WRITE);
             version.set(generation.get());
-        }) ;
+        });
     }
 
     @Override
     public boolean promote(Promote promoteMode) {
         if (!isInTransaction())
             throw new JenaTransactionException("Tried to promote outside a transaction!");
-        if ( transactionMode().equals(ReadWrite.WRITE) )
+        if (transactionMode().equals(ReadWrite.WRITE))
             return true;
 
-        if ( transactionType() == TxnType.READ )
+        if (transactionType() == TxnType.READ)
             return false;
 
         boolean readCommitted = (promoteMode == Promote.READ_COMMITTED);
@@ -210,10 +199,10 @@ public class Quads implements Transactional, AutoCloseable {
             _promote(readCommitted);
             return true;
         } catch (JenaTransactionException ex) {
-            return false ;
+            return false;
         }
     }
-    
+
     @Override
     public void commit() {
         if (!isInTransaction())
@@ -225,18 +214,16 @@ public class Quads implements Transactional, AutoCloseable {
 
     private void _commit() {
         withLock(systemLock, () -> {
-            Arrays.stream(maps).forEach( t -> t.commit() );
-//            quadsIndex().commit();
-//            defaultGraph().commit();
-//            quadsIndex().end();
-//            defaultGraph().end();
-
-            if ( transactionMode().equals(WRITE) ) {
-                if ( version.get() != generation.get() )
-                    throw new InternalErrorException(String.format("Version=%d, Generation=%d",version.get(),generation.get())) ;
-                generation.incrementAndGet() ;
+            Arrays.stream(maps).forEach(t -> t.commit());
+            store.commit();
+            uris.commit();
+            if (transactionMode().equals(WRITE)) {
+                if (version.get() != generation.get())
+                    throw new InternalErrorException(
+                            String.format("Version=%d, Generation=%d", version.get(), generation.get()));
+                generation.incrementAndGet();
             }
-        } ) ;
+        });
     }
 
     @Override
@@ -250,12 +237,10 @@ public class Quads implements Transactional, AutoCloseable {
 
     private void _abort() {
         withLock(systemLock, () -> {
-            Arrays.stream(maps).forEach( t -> t.abort() );
-//            quadsIndex().abort();
-//            defaultGraph().abort();
-//            quadsIndex().end();
-//            defaultGraph().end();
-        } ) ;
+            Arrays.stream(maps).forEach(t -> t.abort());
+            store.abort();
+            uris.abort();
+        });
     }
 
     @Override
@@ -264,11 +249,11 @@ public class Quads implements Transactional, AutoCloseable {
             if (transactionMode().equals(WRITE)) {
                 String msg = "end() called for WRITE transaction without commit or abort having been called. This causes a forced abort.";
                 // _abort does _end actions inside the lock.
-                _abort() ;
+                _abort();
                 finishTransaction();
                 throw new JenaTransactionException(msg);
             } else {
-                _end() ;
+                _end();
             }
             finishTransaction();
         }
@@ -276,10 +261,10 @@ public class Quads implements Transactional, AutoCloseable {
 
     private void _end() {
         withLock(systemLock, () -> {
-            Arrays.stream(maps).forEach( t -> t.end() );
-//            quadsIndex().end();
-//            defaultGraph().end();
-        } ) ;
+            Arrays.stream(maps).forEach(t -> t.end());
+            store.end();
+            uris.end();
+        });
     }
 
     @Override
@@ -288,53 +273,79 @@ public class Quads implements Transactional, AutoCloseable {
             abort();
     }
 
-    // ** STANDARD CODE
-//    public long register(Triple triple) {
-//        return register(Quad.create(Quad.defaultGraphNodeGenerated, triple));
-//    }
-
-    public long register(Quad quad) {
-        if (quad.isTriple()) {
-            return register(Quad.create(Quad.defaultGraphNodeGenerated, quad.asTriple()));
+    private boolean startTxnIfNeeded(ReadWrite readWrite) {
+        if (!isInTransaction()) {
+            begin(readWrite);
+            return true;
         }
-
-        IdxQuad idxQ = new IdxQuad(uris, quad);
-        Store.Result result = store.register(idxQ.buffer);
-        if (!result.existed) {
-            for (Idx idx : Idx.values()) {
-                Bitmap bitmap = new Bitmap();
-                bitmap.set(result.index);
-                maps[idx.ordinal()].set(new IdxData<Bitmap>(idxQ.get(idx), bitmap));
-            }
-        }
-
-        return result.index;
+        return false;
     }
 
-//    public void delete(Triple triple) {
-//        delete(Quad.create(Quad.defaultGraphNodeGenerated, triple));
-//    }
+    public <T> T doInTxn(ReadWrite readWrite, Supplier<T> supplier) {
+        boolean started = startTxnIfNeeded(readWrite);
+        try {
+            T result = supplier.get();
+            if (started) {
+                commit();
+            }
+            return result;
+        } catch (Exception e) {
+            if (started) {
+                abort();
+            }
+            throw e;
+        }
+    }
+
+    public void doInTxn(ReadWrite readWrite, TxnExec exec) {
+        doInTxn(readWrite, () -> {
+            exec.exec();
+            return null;
+        });
+    }
+
+    // ** STANDARD CODE
+
+    public long register(Quad quad) {
+        return doInTxn(WRITE, () -> {
+            if (quad.isTriple()) {
+                return register(Quad.create(Quad.defaultGraphNodeGenerated, quad.asTriple()));
+            }
+
+            IdxQuad idxQ = new IdxQuad(uris, quad);
+            Store.Result result = store.register(idxQ.buffer);
+            if (!result.existed) {
+                for (Idx idx : Idx.values()) {
+                    Bitmap bitmap = new Bitmap();
+                    bitmap.set(result.index);
+                    maps[idx.ordinal()].set(new IdxData<Bitmap>(idxQ.get(idx), bitmap));
+                }
+            }
+
+            return result.index;
+        });
+    }
 
     public void delete(Quad quad) {
-        if (quad.isTriple()) {
-            delete(Quad.create(Quad.defaultGraphNodeGenerated, quad.asTriple()));
-        }
-        IdxQuad idxQ = new IdxQuad(uris, quad);
-        Store.Result result = store.delete(idxQ.buffer);
-        if (result.existed) {
-            for (Idx idx : Idx.values()) {
-                maps[idx.ordinal()].remove(idxQ.get(idx));
+        doInTxn(WRITE, () -> {
+            if (quad.isTriple()) {
+                delete(Quad.create(Quad.defaultGraphNodeGenerated, quad.asTriple()));
             }
-        }
+            IdxQuad idxQ = new IdxQuad(uris, quad);
+            Store.Result result = store.delete(idxQ.buffer);
+            if (result.existed) {
+                for (Idx idx : Idx.values()) {
+                    maps[idx.ordinal()].remove(idxQ.get(idx));
+                }
+            }
+        });
     }
 
     public long size() {
-        return store.size();
+        return doInTxn(READ, () -> {
+            return store.size();
+        });
     }
-
-//    public <T> ExtendedIterator<T> find(Triple triplePattern, Function<IdxQuad,T> mapper) {
-//        return find(Quad.create(Quad.defaultGraphNodeGenerated, triplePattern), mapper);
-//    }
 
     private Bitmap merge(Bitmap map, Node n, Idx idx) {
         Bitmap bitmap = null;
@@ -352,33 +363,33 @@ public class Quads implements Transactional, AutoCloseable {
     }
 
     public Triple asTriple(IdxQuad idx) {
-        return Triple.create(uris.get(idx.get(Idx.S)), uris.get(idx.get(Idx.P)), uris.get(idx.get(Idx.O)));
+        return doInTxn(READ, () -> {
+            return Triple.create(uris.get(idx.get(Idx.S)), uris.get(idx.get(Idx.P)), uris.get(idx.get(Idx.O)));
+        });
+
     }
-//    private Triple asTriple(long tripleId) {
-//        return asTriple( getIdxQuad( tripleId ));
-//    }
 
     public Quad asQuad(IdxQuad idx) {
-        return Quad.create(uris.get(idx.get(Idx.G)), uris.get(idx.get(Idx.S)), uris.get(idx.get(Idx.P)),
-                uris.get(idx.get(Idx.O)));
+        return doInTxn(READ, () -> {
+            return Quad.create(uris.get(idx.get(Idx.G)), uris.get(idx.get(Idx.S)), uris.get(idx.get(Idx.P)),
+                    uris.get(idx.get(Idx.O)));
+        });
     }
 
-//    private Quad asQuad(long quadId) {
-//        return asQuad( getIdxQuad(quadId) );
-//    }
-
     public <T> ExtendedIterator<T> find(Quad quad, Function<IdxQuad, T> mapper) {
-        if (quad.isTriple()) {
-            return find(Quad.create(Quad.defaultGraphNodeGenerated, quad.asTriple()), mapper);
-        }
-        Bitmap bitmap = null;
-        for (Idx idx : Idx.values()) {
-            Node n = idx.from(quad);
-            if (n != null) {
-                bitmap = merge(bitmap, n, idx);
+        return doInTxn(READ, () -> {
+            if (quad.isTriple()) {
+                return find(Quad.create(Quad.defaultGraphNodeGenerated, quad.asTriple()), mapper);
             }
-        }
-        return WrappedIterator.create(new IdxQuadIterator(bitmap)).mapWith(mapper);
+            Bitmap bitmap = null;
+            for (Idx idx : Idx.values()) {
+                Node n = idx.from(quad);
+                if (n != null) {
+                    bitmap = merge(bitmap, n, idx);
+                }
+            }
+            return WrappedIterator.create(new IdxQuadIterator(bitmap)).mapWith(mapper);
+        });
     }
 
     private IdxQuad getIdxQuad(long quadId) {

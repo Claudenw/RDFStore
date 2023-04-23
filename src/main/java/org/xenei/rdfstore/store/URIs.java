@@ -1,45 +1,38 @@
 package org.xenei.rdfstore.store;
 
-import static java.lang.ThreadLocal.withInitial;
+import static org.apache.jena.query.ReadWrite.READ;
 import static org.apache.jena.query.ReadWrite.WRITE;
-import static org.slf4j.LoggerFactory.getLogger;
 
 import java.util.Iterator;
 import java.util.PrimitiveIterator;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.ReentrantLock;
 
-import org.apache.jena.atlas.lib.InternalErrorException;
 import org.apache.jena.graph.Node;
 import org.apache.jena.graph.impl.LiteralLabel;
 import org.apache.jena.query.ReadWrite;
-import org.apache.jena.query.TxnType;
-import org.apache.jena.shared.Lock;
-import org.apache.jena.shared.LockMRPlusSW;
-import org.apache.jena.sparql.JenaTransactionException;
-import org.apache.jena.sparql.core.Transactional;
-import org.apache.jena.sparql.core.Transactional.Promote;
 import org.apache.jena.sparql.core.mem.TransactionalComponent;
 import org.xenei.rdfstore.Store;
 import org.xenei.rdfstore.TrieStore;
+import org.xenei.rdfstore.idx.AbstractIndex;
 import org.xenei.rdfstore.idx.Bitmap;
 import org.xenei.rdfstore.idx.LangIdx;
 import org.xenei.rdfstore.idx.NumberIdx;
-import org.slf4j.Logger;
+import org.xenei.rdfstore.txn.TxnHandler;
 
 public class URIs implements TransactionalComponent {
-    
-    private static final Logger log = getLogger(URIs.class);
+    private final TrieStore<Node> store;
+    private final AbstractIndex<Number> numbers;
+    private final AbstractIndex<String> languages;
+    private final TxnHandler txnHandler;
 
-    private TrieStore<Node> store = new TrieStore<Node>(URIs::asString);
-    private NumberIdx numbers = new NumberIdx();
-    private LangIdx languages = new LangIdx();
+    public URIs() {
+        store = new TrieStore<Node>(URIs::asString);
+        numbers = new NumberIdx();
+        languages = new LangIdx();
+        txnHandler = new TxnHandler(this::prepareBegin, this::execCommit, this::execAbort, this::execEnd);
+    }
 
+    // ** ACCESS CODE
 
- 
-    
-    //** ACCESS CODE 
-    
     private static String asString(Node node) {
         if (node.isURI()) {
             return node.getURI();
@@ -57,27 +50,55 @@ public class URIs implements TransactionalComponent {
         return (int) l;
     }
 
-    public long register(Node node) {
-        // String key = asString(node);
-        Store.Result result = store.register(node);
-        if (!result.existed) {
-            if (node.isLiteral()) {
+    private void prepareBegin(ReadWrite readWrite) {
+        store.begin(readWrite);
+        languages.begin(readWrite);
+        numbers.begin(readWrite);
+    }
 
-                LiteralLabel label = node.getLiteral();
-                if (label.isXML()) {
-                    if (Number.class.isAssignableFrom(label.getDatatype().getJavaClass())) {
-                        numbers.register((Number) label.getValue(), asInt(result.index));
+    private void execCommit() {
+        store.commit();
+        languages.commit();
+        numbers.commit();
+    }
+
+    private void execAbort() {
+        store.abort();
+        languages.abort();
+        numbers.abort();
+    }
+
+    private void execEnd() {
+        store.end();
+        languages.end();
+        numbers.end();
+    }
+
+    public long register(Node node) {
+        return txnHandler.doInTxn(WRITE, () -> {
+            // String key = asString(node);
+            Store.Result result = store.register(node);
+            if (!result.existed) {
+                if (node.isLiteral()) {
+
+                    LiteralLabel label = node.getLiteral();
+                    if (label.isXML()) {
+                        if (Number.class.isAssignableFrom(label.getDatatype().getJavaClass())) {
+                            numbers.register((Number) label.getValue(), asInt(result.index));
+                        }
+                    } else {
+                        languages.register(node.getLiteral().language(), asInt(result.index));
                     }
-                } else {
-                    languages.register(node.getLiteral().language(), asInt(result.index));
                 }
             }
-        }
-        return result.index;
+            return result.index;
+        });
     }
 
     public Node get(long idx) {
-        return store.get(idx);
+        return txnHandler.doInTxn(READ, () -> {
+            return store.get(idx);
+        });
     }
 
     public Iterator<Node> iterator(PrimitiveIterator.OfLong iter) {
@@ -96,7 +117,27 @@ public class URIs implements TransactionalComponent {
 
         };
     }
-    
+
+    @Override
+    public void begin(ReadWrite readWrite) {
+        txnHandler.begin(readWrite);
+    }
+
+    @Override
+    public void commit() {
+        txnHandler.commit();
+    }
+
+    @Override
+    public void abort() {
+        txnHandler.abort();
+    }
+
+    @Override
+    public void end() {
+        txnHandler.end();
+    }
+
     public static class Result {
 
         private final Bitmap[] bitmap = new Bitmap[3];

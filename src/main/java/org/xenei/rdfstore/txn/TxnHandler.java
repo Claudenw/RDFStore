@@ -89,9 +89,8 @@ public class TxnHandler implements TransactionalComponent {
                 execAbort.exec();
                 finishTransaction();
                 throw new JenaTransactionException(msg);
-            } else {
-                execEnd.exec();
-            }
+            } 
+            execEnd.exec();
             finishTransaction();
         }
     }
@@ -104,11 +103,6 @@ public class TxnHandler implements TransactionalComponent {
         return false;
     }
     
-    private void commitTxnIfNeeded(boolean started) {
-        if (started) {
-            commit();
-        }
-    }
     
     public <T> T doInTxn( ReadWrite readWrite, Supplier<T> supplier ) {
         boolean started = startTxnIfNeeded(readWrite);

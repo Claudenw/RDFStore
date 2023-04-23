@@ -7,6 +7,7 @@ import org.apache.jena.graph.Node;
 import org.apache.jena.query.ReadWrite;
 import org.apache.jena.query.TxnType;
 import org.apache.jena.riot.system.PrefixMap;
+import org.apache.jena.riot.system.PrefixMapStd;
 import org.apache.jena.sparql.core.DatasetGraphTriplesQuads;
 import org.apache.jena.sparql.core.Quad;
 import org.xenei.rdfstore.store.Idx;
@@ -14,6 +15,12 @@ import org.xenei.rdfstore.store.Quads;
 
 public class Dataset extends DatasetGraphTriplesQuads {
     private Quads quads;
+    private PrefixMap prefixes;
+    
+    Dataset() {
+        quads = new Quads();
+        prefixes = new PrefixMapStd();
+    }
 
     @Override
     public Iterator<Node> listGraphNodes() {
@@ -22,62 +29,52 @@ public class Dataset extends DatasetGraphTriplesQuads {
 
     @Override
     public PrefixMap prefixes() {
-        // TODO Auto-generated method stub
-        return null;
+        return prefixes;
     }
 
     @Override
     public boolean supportsTransactions() {
-        // TODO Auto-generated method stub
-        return false;
+        return true;
     }
 
     @Override
     public void begin(TxnType type) {
-        // TODO Auto-generated method stub
-
+        quads.begin(type);
     }
 
     @Override
     public boolean promote(Promote mode) {
-        // TODO Auto-generated method stub
-        return false;
+        return quads.promote(mode);
     }
 
     @Override
     public void commit() {
-        // TODO Auto-generated method stub
-
+        quads.commit();
     }
 
     @Override
     public void abort() {
-        // TODO Auto-generated method stub
-
+        quads.abort();
     }
 
     @Override
     public void end() {
-        // TODO Auto-generated method stub
-
+        quads.end();
     }
 
     @Override
     public ReadWrite transactionMode() {
-        // TODO Auto-generated method stub
-        return null;
+        return quads.transactionMode();
     }
 
     @Override
     public TxnType transactionType() {
-        // TODO Auto-generated method stub
-        return null;
+        return quads.transactionType();
     }
 
     @Override
     public boolean isInTransaction() {
-        // TODO Auto-generated method stub
-        return false;
+        return quads.isInTransaction();
     }
 
     @Override
