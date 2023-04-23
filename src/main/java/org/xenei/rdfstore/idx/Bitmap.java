@@ -5,6 +5,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.PrimitiveIterator;
 import java.util.TreeMap;
+import java.util.function.ToLongBiFunction;
 
 import org.apache.commons.collections4.bloomfilter.BitMapProducer;
 import org.apache.commons.collections4.bloomfilter.IndexProducer;
@@ -23,6 +24,9 @@ public class Bitmap {
             return Integer.compareUnsigned(arg0, arg1);
         }
     };
+    
+  
+    
 
     /**
      * A list of entries
@@ -52,8 +56,47 @@ public class Bitmap {
         return result;
     }
 
+    public static Bitmap xor(Bitmap left, Bitmap right) {
+        Bitmap bitmap = new Bitmap();
+        Integer leftPage = left.entries.firstKey();
+        Integer rightPage = right.entries.firstKey();
+        while( leftPage != null && rightPage != null) {
+            int i = leftPage.compareTo(rightPage);
+            if (i<0) {
+                bitmap.entries.put( leftPage, left.entries.get(leftPage));
+                leftPage = left.entries.higherKey(leftPage);
+            } else if (i>0) {
+                bitmap.entries.put( rightPage, left.entries.get(rightPage));
+                rightPage = left.entries.higherKey(rightPage);
+            } else {
+                Entry leftEntry = left.entries.get(leftPage);
+                Entry rightEntry = right.entries.get(rightPage);
+                bitmap.entries.put( leftPage, leftEntry.logical(rightEntry, xor));
+            }
+        }
+        return bitmap;
+    }
+    
+    public void xor(Bitmap other) {
+        Integer thisPage = this.entries.firstKey();
+        Integer otherPage = other.entries.firstKey();
+        while( thisPage != null && otherPage != null) {
+            int i = thisPage.compareTo(otherPage);
+            if (i<0) {
+                // do nothing
+            } else if (i>0) {
+                this.entries.put( otherPage, this.entries.get(otherPage));
+                otherPage = this.entries.higherKey(otherPage);
+            } else {
+                Entry thisEntry = this.entries.get(thisPage);
+                Entry otherEntry = other.entries.get(otherPage);
+                thisEntry.bitMap ^= otherEntry.bitMap;
+            }
+        }
+    }
     /**
      * Calculates the intersecton between a set of bitmaps.
+     * 
      * @param maps the bit maps.
      * @return a bitmap containing the intersection.
      */
@@ -253,6 +296,15 @@ public class Bitmap {
         return new Iter();
     }
 
+    @FunctionalInterface
+    public interface Logical {
+        long apply(long a, long b);
+    }
+   
+    public static final Logical xor = (a,b)->  a ^ b;
+    public static final Logical and = (a,b)->  a & b;
+    public static final Logical or = (a,b)->  a | b;
+    
     public static class Entry implements Comparable<Entry> {
         // integer as an unsigned integer
         Integer index;
@@ -276,6 +328,10 @@ public class Bitmap {
             return (this.bitMap & getLongBit(bitIndex)) != 0;
         }
 
+        public void mutate(long other, Logical func) {
+            this.bitMap = func.apply( this.bitMap, other);
+        }
+        
         /**
          * Sets the bit in the bit maps.
          * <p>
@@ -288,7 +344,7 @@ public class Bitmap {
          * range being tracked.
          */
         public void set(final long bitIndex) {
-            this.bitMap |= getLongBit(bitIndex);
+            mutate( getLongBit(bitIndex), or );
         }
 
         /**
@@ -303,7 +359,7 @@ public class Bitmap {
          * range being tracked.
          */
         public void clear(final long bitIndex) {
-            this.bitMap &= ~getLongBit(bitIndex);
+            mutate( ~getLongBit(bitIndex), and);
         }
 
         public boolean isEmpty() {
@@ -317,8 +373,16 @@ public class Bitmap {
          */
         public void union(final Entry entry) {
             if (entry != null && this.compareTo(entry) == 0) {
-                this.bitMap |= entry.bitMap;
+                mutate( entry.bitMap, or );
             }
+        }
+        
+        public long logical( long bitmap, Logical func) {
+            return func.apply(this.bitMap, bitmap);
+        }
+        
+        public Entry logical( Entry other, Logical func) {
+            return new Entry( index, logical(other.bitMap, func));
         }
 
         /**
@@ -330,7 +394,7 @@ public class Bitmap {
             if (entry == null) {
                 this.bitMap = 0L;
             } else if (this.compareTo(entry) == 0) {
-                this.bitMap &= entry.bitMap;
+                mutate( entry.bitMap, and);
             }
         }
     }

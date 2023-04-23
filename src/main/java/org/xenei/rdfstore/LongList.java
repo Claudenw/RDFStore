@@ -1,9 +1,19 @@
 package org.xenei.rdfstore;
 
+import static org.apache.jena.query.ReadWrite.READ;
+import static org.apache.jena.query.ReadWrite.WRITE;
+
 import java.util.ArrayList;
-import java.util.Map;
+import java.util.Iterator;
 import java.util.NavigableSet;
+import java.util.NoSuchElementException;
 import java.util.TreeSet;
+
+import org.apache.jena.query.ReadWrite;
+import org.apache.jena.sparql.core.mem.TransactionalComponent;
+import org.apache.jena.util.iterator.ExtendedIterator;
+import org.apache.jena.util.iterator.WrappedIterator;
+import org.xenei.rdfstore.txn.TxnHandler;
 
 /**
  * An implementation of a list like structure that can hold up to Long.MAX_VALUE
@@ -11,9 +21,10 @@ import java.util.TreeSet;
  * 
  * @param <T> the type to store.
  */
-public class LongList<T> {
+public class LongList<T> implements TransactionalComponent {
     public static final long MAX_ITEM_INDEX = (Integer.MAX_VALUE * (long) Integer.MAX_VALUE) - 1;
 
+    private final TxnHandler txnHandler;
     private final ArrayList<NavigableSet<IdxData<T>>> pages;
     private long itemCount;
 
@@ -22,8 +33,9 @@ public class LongList<T> {
      */
     public LongList() {
         this.pages = new ArrayList<NavigableSet<IdxData<T>>>();
-        pages.add( new TreeSet<IdxData<T>>() );
+        pages.add(new TreeSet<IdxData<T>>());
         this.itemCount = 0;
+        this.txnHandler = new TxnHandler(this::prepareBegin, this::execCommit, this::execAbort, this::execEnd);
     }
 
     private static void checkIndex(long idx) {
@@ -46,14 +58,49 @@ public class LongList<T> {
         return (int) idx / Integer.MAX_VALUE;
     }
 
-    /**
-     * Get the page offset for the item index.
-     * 
-     * @param idx
-     * @return the offset into the page for the item.
-     */
-    private static int getPageOffset(long idx) {
-        return (int) idx % Integer.MAX_VALUE;
+    // ** TRANSACTION FUCNTIONS
+
+    private NavigableSet<IdxData<T>> txnPages;
+    private long txnCurrentItem;
+
+    private void prepareBegin(ReadWrite readWrite) {
+        txnPages = new TreeSet<IdxData<T>>();
+        txnCurrentItem = itemCount;
+    }
+
+    private void execCommit() {
+        int lastPage = -1;
+        NavigableSet<IdxData<T>> page = null;
+        for (IdxData<T> data : txnPages) {
+            int pageNo = getPageNumber(data.idx);
+            if (pageNo != lastPage) {
+                page = pages.get(pageNo);
+                if (page == null) {
+                    page = new TreeSet<IdxData<T>>();
+                    pages.add(page);
+                }
+            }
+            lastPage = pageNo;
+            if (page.add(data)) {
+                if (data.data != null) {
+                    itemCount++;
+                }
+            } else {
+                if (data.data == null) {
+                    itemCount--;
+                }
+            }
+        }
+    }
+
+    private void execAbort() {
+        txnPages = null;
+        txnCurrentItem = itemCount;
+    }
+
+    private void execEnd() {
+        txnPages = null;
+        txnCurrentItem = itemCount;
     }
 
     /**
@@ -61,16 +108,12 @@ public class LongList<T> {
      * 
      * @param data the item to add.
      */
-    public IdxData add(T data) {
-        NavigableSet<IdxData<T>> page = pages.get(pages.size() - 1);
-        if (page.size() == Integer.MAX_VALUE) {
-            page = new TreeSet<IdxData<T>>();
-            pages.add(page);
-        }
-        IdxData idxData = new IdxData(itemCount,data); 
-        page.add(idxData);
-        itemCount++;
-        return idxData;
+    public IdxData<T> add(T data) {
+        return txnHandler.doInTxn(WRITE, () -> {
+            IdxData<T> idxData = new IdxData<>(txnCurrentItem++, data);
+            txnPages.add(idxData);
+            return idxData;
+        });
     }
 
     /**
@@ -79,7 +122,9 @@ public class LongList<T> {
      * @return the size of the list.
      */
     public long size() {
-        return itemCount;
+        return txnHandler.doInTxn(ReadWrite.READ, () -> {
+            return txnCurrentItem;
+        });
     }
 
     /**
@@ -89,19 +134,9 @@ public class LongList<T> {
      * @param data the item to place into the list.
      */
     public void set(IdxData<T> data) {
-        int pageNo = getPageNumber(data.idx);
-        NavigableSet<IdxData<T>> page = pages.get(pageNo);
-        if (page == null) {
-            page = new TreeSet<IdxData<T>>();
-            pages.add( page );
-        }
-        if (page.add(data)) {
-            if (data.data == null) {
-                itemCount--;
-            } else {
-                itemCount++;
-            }
-        }
+        txnHandler.doInTxn(WRITE, () -> {
+            txnPages.add(data);
+        });
     }
 
     /**
@@ -111,10 +146,16 @@ public class LongList<T> {
      * @return the item or {@code null} if no such item exists.
      */
     public T get(long idx) {
-        IdxData searcher = new IdxData( idx, null );
-        NavigableSet<IdxData<T>> page = pages.get(getPageNumber(idx));
-        IdxData<T> result = page.floor(searcher);
-        return result == null?null:(result.idx == searcher.idx) ? result.data : null;
+        return txnHandler.doInTxn(READ, () -> {
+            IdxData<T> searcher = new IdxData<>(idx, null);
+            IdxData<T> result = txnPages.floor(searcher);
+            if (result == null || result.idx != idx) {
+                NavigableSet<IdxData<T>> page = pages.get(getPageNumber(idx));
+                result = page == null? null : page.floor(searcher);
+                return result == null ? null : (result.idx == idx) ? result.data : null;
+            }
+            return result.data;
+        });
     }
 
     /**
@@ -123,7 +164,69 @@ public class LongList<T> {
      * @param idx the index of the item to remove.
      */
     public void remove(long idx) {
-        set(new IdxData(idx, null));
+        set(new IdxData<>(idx, null));
+    }
+
+    public ExtendedIterator<IdxData<T>> iterator() {
+        return WrappedIterator.create(new LongListIterator());
+    }
+
+    public class LongListIterator implements Iterator<IdxData<T>> {
+        IdxData<T> next = null;
+        Iterator<IdxData<T>> iterT = null;
+        Iterator<NavigableSet<IdxData<T>>> pageIter = WrappedIterator.create(pages.iterator());
+
+        @Override
+        public boolean hasNext() {
+            if (next == null) {
+                next = getNext();
+            }
+            return next != null;
+        }
+
+        private IdxData<T> getNext() {
+            if (iterT == null || !iterT.hasNext()) {
+                iterT = getIterT();
+            }
+            return iterT == null ? null : iterT.next();
+        }
+
+        private Iterator<IdxData<T>> getIterT() {
+            if (pageIter.hasNext()) {
+                return pageIter.next().iterator();
+            }
+            return null;
+        }
+
+        @Override
+        public IdxData<T> next() {
+            if (hasNext()) {
+                IdxData<T> result = next;
+                next = null;
+                return result;
+            }
+            throw new NoSuchElementException();
+        }
+    }
+
+    @Override
+    public void begin(ReadWrite readWrite) {
+        txnHandler.begin(readWrite);
+    }
+
+    @Override
+    public void commit() {
+        txnHandler.commit();
+    }
+
+    @Override
+    public void abort() {
+        txnHandler.abort();
+    }
+
+    @Override
+    public void end() {
+        txnHandler.end();
     }
 
 }

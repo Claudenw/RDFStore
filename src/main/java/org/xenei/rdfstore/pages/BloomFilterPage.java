@@ -12,7 +12,7 @@ import org.xenei.rdfstore.Store;
 import org.xenei.rdfstore.Store.Page;
 import org.xenei.rdfstore.Store.Result;
 
-public class BloomFilterPage<T> implements Page<T,BloomFilter> {
+public class BloomFilterPage<T> implements Page<T, BloomFilter> {
 
     private final Store<T> wrapped;
     private final long maxPageSize;
@@ -22,6 +22,7 @@ public class BloomFilterPage<T> implements Page<T,BloomFilter> {
 
     /**
      * Calculates a Bloom filter shape for based on the maxPageSize
+     * 
      * @param maxPageSize the maximum page size
      * @return the Bloom filter shape for that size page.
      */
@@ -30,16 +31,15 @@ public class BloomFilterPage<T> implements Page<T,BloomFilter> {
         int m = (int) Math.floor(k * maxPageSize / Math.log(2));
         return Shape.fromKM(k, m);
     }
-    
+
     public static BloomFilter createFilter(Hasher hasher, long maxPageSize) {
-            BloomFilter target = new SimpleBloomFilter(BloomFilterPage.calculateShape(maxPageSize));
-            target.merge(hasher);
-            return target;
+        BloomFilter target = new SimpleBloomFilter(BloomFilterPage.calculateShape(maxPageSize));
+        target.merge(hasher);
+        return target;
     }
 
-
     public BloomFilter createFilter(T item) {
-        return createFilter( hasherFunc.apply(item), maxPageSize );
+        return createFilter(hasherFunc.apply(item), maxPageSize);
     }
 
     public BloomFilterPage(Store<T> wrapped, long maxPageSize2, Function<T, Hasher> hasherFunc) {

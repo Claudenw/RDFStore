@@ -1,17 +1,33 @@
 package org.xenei.rdfstore.jena;
 
+import org.apache.jena.graph.Node;
 import org.apache.jena.graph.Triple;
 import org.apache.jena.graph.impl.GraphBase;
+import org.apache.jena.sparql.core.Quad;
 import org.apache.jena.util.iterator.ExtendedIterator;
 import org.xenei.rdfstore.store.Quads;
 
 public class Graph extends GraphBase {
 
-    Quads quads = new Quads();
+    Quads quads;
+    Node graphName;
+
+    public Graph() {
+        this(new Quads());
+    }
+
+    public Graph(Quads quads) {
+        this(quads, Quad.defaultGraphNodeGenerated);
+    }
+
+    public Graph(Quads quads, Node graphName) {
+        this.quads = quads;
+        this.graphName = graphName;
+    }
 
     @Override
     protected ExtendedIterator<Triple> graphBaseFind(Triple triplePattern) {
-        return quads.find(triplePattern);
+        return quads.find(Quad.create(graphName, triplePattern), quads::asTriple);
     }
 
     @Override
@@ -27,7 +43,7 @@ public class Graph extends GraphBase {
      */
     @Override
     public void performAdd(Triple t) {
-        quads.register(t);
+        quads.register(Quad.create(graphName, t));
     }
 
     /**
@@ -37,7 +53,7 @@ public class Graph extends GraphBase {
      */
     @Override
     public void performDelete(Triple t) {
-        quads.delete(t);
+        quads.delete(Quad.create(graphName, t));
     }
 
 }

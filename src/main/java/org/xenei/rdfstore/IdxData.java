@@ -1,5 +1,8 @@
 package org.xenei.rdfstore;
 
+import java.util.Iterator;
+import java.util.PrimitiveIterator;
+
 /**
  * An immutable node within a Store containing both the item being stored and
  * its index in the store.
@@ -29,6 +32,23 @@ public class IdxData<T> implements Comparable<IdxData<T>> {
 
     @Override
     public int compareTo(IdxData<T> other) {
-        return Long.compare( idx, other.idx);
+        return Long.compare(idx, other.idx);
     }
+
+    public static <T> PrimitiveIterator.OfLong iterator(Iterator<IdxData<T>> inter) {
+        return new PrimitiveIterator.OfLong() {
+            Iterator<IdxData<T>> i = inter;
+
+            @Override
+            public boolean hasNext() {
+                return i.hasNext();
+            }
+
+            @Override
+            public long nextLong() {
+                return i.next().idx;
+            }
+        };
+    }
+
 }

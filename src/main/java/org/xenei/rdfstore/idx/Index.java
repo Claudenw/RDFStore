@@ -1,27 +1,34 @@
 package org.xenei.rdfstore.idx;
 
+import org.apache.jena.sparql.core.mem.TransactionalComponent;
+
 /**
- * An index that associates bitmaps with items and enables the turning on or off of specific bits in the associated bitmaps.
+ * An index that associates bitmaps with items and enables the turning on or off
+ * of specific bits in the associated bitmaps.
+ * 
  * @param <T> the type of item in the index.
  */
-public interface Index<T> {
-    
+public interface Index<T> extends TransactionalComponent {
+
     default void checkIndex(long idx, long maxIndex) {
         if (idx < 0 || idx >= maxIndex) {
-            throw new IndexOutOfBoundsException( "Index must be between [0,"+maxIndex+")");
+            throw new IndexOutOfBoundsException("Index must be between [0," + maxIndex + ")");
         }
     }
 
     /**
      * Register the item at the specified index.
+     * 
      * @param item the item to register
      * @param id the id to register with the item
-     * @return the Bitmap that associated with the item that has the bit {@code id} enabled.
+     * @return the Bitmap that associated with the item that has the bit {@code id}
+     * enabled.
      */
     Bitmap register(T item, long id);
 
     /**
      * Deletes the id from the bitmap associated with the item.
+     * 
      * @param item the item.
      * @param id the bit to turn off.
      */
@@ -29,6 +36,7 @@ public interface Index<T> {
 
     /**
      * Gets the bitmap for the item
+     * 
      * @param item the item to search for.
      * @return the bitmap for the item
      */
@@ -36,6 +44,7 @@ public interface Index<T> {
 
     /**
      * Gets the number of items in this index.
+     * 
      * @return the number of items in this index.
      */
     long size();

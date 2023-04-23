@@ -44,7 +44,7 @@ public enum Idx {
         Node result = null;
         switch (this) {
         case G:
-            result =  q.getGraph();
+            result = q.getGraph();
             break;
         case S:
             result = q.getSubject();

@@ -2,6 +2,8 @@ package org.xenei.rdfstore;
 
 import java.util.Iterator;
 
+import org.apache.jena.sparql.core.mem.TransactionalComponent;
+
 /**
  * Generic store interface.
  * 
@@ -10,7 +12,7 @@ import java.util.Iterator;
  *
  * @param <T> the object type to store
  */
-public interface Store<T> {
+public interface Store<T> extends TransactionalComponent {
 
     /**
      * An result indicating no result.
