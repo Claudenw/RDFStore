@@ -2,6 +2,7 @@ package org.xenei.rdfstore.txn;
 
 import static java.lang.ThreadLocal.withInitial;
 import static org.apache.jena.query.ReadWrite.WRITE;
+import static org.apache.jena.query.ReadWrite.READ;
 
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -49,7 +50,7 @@ public class TxnHandler implements TransactionalComponent {
         if (isInTransaction.get())
             throw new JenaTransactionException("Transactions cannot be nested!");
         isInTransaction.set(true);
-        transactionLock.enterCriticalSection(readWrite.equals(ReadWrite.READ)); // get the dataset write lock, if
+        transactionLock.enterCriticalSection(readWrite.equals(READ)); // get the dataset write lock, if
                                                                                 // needed.
         transactionMode.set(readWrite);
         prepareBegin.accept(readWrite);
@@ -99,6 +100,8 @@ public class TxnHandler implements TransactionalComponent {
         if (!isInTransaction()) {
             begin(readWrite);
             return true;
+        } else if (readWrite.equals(WRITE) && !transactionMode().equals(WRITE)) {
+            throw new JenaTransactionException("WRITE mode transaction required");
         }
         return false;
     }
