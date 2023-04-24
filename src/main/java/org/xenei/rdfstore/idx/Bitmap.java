@@ -56,42 +56,73 @@ public class Bitmap {
         return result;
     }
 
-    public static Bitmap xor(Bitmap left, Bitmap right) {
-        Bitmap bitmap = new Bitmap();
-        Integer leftPage = left.entries.firstKey();
-        Integer rightPage = right.entries.firstKey();
+    private static void copyRemaining( Bitmap dest, Bitmap orig, Integer fromKey) {
+        while (fromKey != null) {
+            dest.entries.put( fromKey,  orig.entries.get(fromKey).clone());
+            fromKey = orig.entries.higherKey(fromKey);
+        }
+    }
+    
+    public static Bitmap xor(Bitmap left, Bitmap right) {        
+        Bitmap result = new Bitmap();
+        if (left == right) {
+            return result;
+        }
+        Integer leftPage = left==null || left.entries.isEmpty()? null : left.entries.firstKey();
+        Integer rightPage = right==null || right.entries.isEmpty() ? null:right.entries.firstKey();
         while( leftPage != null && rightPage != null) {
-            int i = leftPage.compareTo(rightPage);
+            int i = Integer.compareUnsigned(leftPage, rightPage);
             if (i<0) {
-                bitmap.entries.put( leftPage, left.entries.get(leftPage));
+                result.entries.put( leftPage, left.entries.get(leftPage).clone());
                 leftPage = left.entries.higherKey(leftPage);
             } else if (i>0) {
-                bitmap.entries.put( rightPage, left.entries.get(rightPage));
-                rightPage = left.entries.higherKey(rightPage);
+                result.entries.put( rightPage, right.entries.get(rightPage).clone());
+                rightPage = right.entries.higherKey(rightPage);
             } else {
                 Entry leftEntry = left.entries.get(leftPage);
                 Entry rightEntry = right.entries.get(rightPage);
-                bitmap.entries.put( leftPage, leftEntry.logical(rightEntry, xor));
+                Entry newEntry = leftEntry.logical(rightEntry, xor);
+                if (!newEntry.isEmpty()) {
+                    result.entries.put( leftPage, newEntry);
+                }
+                leftPage = left.entries.higherKey(leftPage);
+                rightPage = right.entries.higherKey(rightPage);
             }
         }
-        return bitmap;
+        copyRemaining( result, left, leftPage );
+        copyRemaining( result, right, rightPage );
+        
+        return result;
     }
     
     public void xor(Bitmap other) {
+        if (other == null) {
+            return;
+        }
+        if (this == other) {
+            this.entries.clear();
+        } else {
         Integer thisPage = this.entries.firstKey();
         Integer otherPage = other.entries.firstKey();
         while( thisPage != null && otherPage != null) {
-            int i = thisPage.compareTo(otherPage);
+            int i = Integer.compareUnsigned(thisPage, otherPage);
             if (i<0) {
-                // do nothing
+                thisPage = this.entries.higherKey(thisPage);
             } else if (i>0) {
-                this.entries.put( otherPage, this.entries.get(otherPage));
-                otherPage = this.entries.higherKey(otherPage);
+                this.entries.put( otherPage, other.entries.get(otherPage).clone());
+                otherPage = other.entries.higherKey(otherPage);
             } else {
                 Entry thisEntry = this.entries.get(thisPage);
                 Entry otherEntry = other.entries.get(otherPage);
                 thisEntry.bitMap ^= otherEntry.bitMap;
+                if (thisEntry.isEmpty()) {
+                    this.entries.remove( thisPage );
+                }
+                thisPage = this.entries.higherKey(thisPage);
+                otherPage = other.entries.higherKey(otherPage);
             }
+        }
+        copyRemaining( this, other, otherPage );
         }
     }
     /**
@@ -317,6 +348,10 @@ public class Bitmap {
         Entry(Integer index, long bitMap) {
             this.index = index;
             this.bitMap = bitMap;
+        }
+        
+        public Entry clone() {
+            return new Entry( index, bitMap );
         }
 
         @Override

@@ -191,185 +191,158 @@ public class BitmapTest {
         assertFalse(iter.hasNext());
     }
 
-    /*
-     * public class Bitmap {
-    
-    private TreeMap<Integer, Entry> entries = new TreeMap<Integer, Entry>();
-    
-    public static Bitmap union(Bitmap... maps) {
-        Bitmap result = new Bitmap();
-        for (Bitmap map : maps) {
-            Integer key = map.entries.firstKey();
-            while (key != null) {
-                result.entries.get(key).union(map.entries.get(key));
-                key = map.entries.higherKey(key);
-            }
-        }
-        return result;
+    @Test
+    public void staticXorTest() {
+        Bitmap bitmap1 = new Bitmap();
+        bitmap1.set(1);
+        bitmap1.set(64);
+        bitmap1.set(Bitmap.MAX_INDEX);
+
+        Bitmap bitmap2 = new Bitmap();
+        bitmap2.set(1);
+        bitmap2.set(65);
+        bitmap2.set(FIRST_INDEX_ON_LAST_PAGE);
+        bitmap2.set(Bitmap.MAX_INDEX);
+
+        Bitmap result = Bitmap.xor(bitmap1, bitmap2);
+        assertFalse(result.contains(1));
+        assertTrue(result.contains(64));
+        assertTrue(result.contains(65));
+        assertTrue(result.contains(FIRST_INDEX_ON_LAST_PAGE));
+        assertFalse(result.contains(Bitmap.MAX_INDEX));
+
+        result = Bitmap.xor(bitmap2, bitmap1);
+        assertFalse(result.contains(1));
+        assertTrue(result.contains(64));
+        assertTrue(result.contains(65));
+        assertTrue(result.contains(FIRST_INDEX_ON_LAST_PAGE));
+        assertFalse(result.contains(Bitmap.MAX_INDEX));
+
+        // different number of pages
+        int page3bit = 64 * 3;
+        bitmap1.set(page3bit);
+        result = Bitmap.xor(bitmap1, bitmap2);
+        assertFalse(result.contains(1));
+        assertTrue(result.contains(64));
+        assertTrue(result.contains(65));
+        assertTrue(result.contains(page3bit));
+        assertTrue(result.contains(FIRST_INDEX_ON_LAST_PAGE));
+        assertFalse(result.contains(Bitmap.MAX_INDEX));
+
+        result = Bitmap.xor(bitmap2, bitmap1);
+        assertFalse(result.contains(1));
+        assertTrue(result.contains(64));
+        assertTrue(result.contains(65));
+        assertTrue(result.contains(page3bit));
+        assertTrue(result.contains(FIRST_INDEX_ON_LAST_PAGE));
+        assertFalse(result.contains(Bitmap.MAX_INDEX));
+
+        // different ending pages
+        bitmap1.clear(Bitmap.MAX_INDEX);
+        result = Bitmap.xor(bitmap1, bitmap2);
+        assertFalse(result.contains(1));
+        assertTrue(result.contains(64));
+        assertTrue(result.contains(65));
+        assertTrue(result.contains(page3bit));
+        assertTrue(result.contains(FIRST_INDEX_ON_LAST_PAGE));
+        assertTrue(result.contains(Bitmap.MAX_INDEX));
+
+        result = Bitmap.xor(bitmap2, bitmap1);
+        assertFalse(result.contains(1));
+        assertTrue(result.contains(64));
+        assertTrue(result.contains(65));
+        assertTrue(result.contains(page3bit));
+        assertTrue(result.contains(FIRST_INDEX_ON_LAST_PAGE));
+        assertTrue(result.contains(Bitmap.MAX_INDEX));
+        
+        assertTrue( Bitmap.xor(bitmap1, bitmap1).isEmpty() );
+
     }
-    
-    public static Bitmap intersection(Bitmap... maps) {
-        Bitmap result = new Bitmap();
-        // check for any null entries
-        for (Bitmap m : maps) {
-            if (m == null) {
-                return result;
-            }
-        }
-    
-        Integer key = maps[0].entries.firstKey();
-        for (Bitmap map : maps) {
-            Integer testKey = map.entries.firstKey();
-            if (key > testKey) {
-                key = testKey;
-            }
-        }
-        Integer nextKey = null;
-        while (key != null) {
-            Entry entry = result.entries.get(key);
-            for (Bitmap map : maps) {
-                Integer testKey = map.entries.higherKey(key);
-                nextKey = nextKey == null ? testKey : (nextKey > testKey ? testKey : nextKey);
-                entry.intersection(map.entries.get(key));
-            }
-            key = nextKey;
-            nextKey = null;
-        }
-        return result;
+
+    private Bitmap xorTestBitmap1() {
+        Bitmap bitmap1 = new Bitmap();
+        bitmap1.set(1);
+        bitmap1.set(64);
+        bitmap1.set(Bitmap.MAX_INDEX);
+        return bitmap1;
     }
-    
-    public boolean contains(final int bitIndex) {
-        Entry entry = entries.get(Integer.valueOf(getLongIndex(bitIndex)));
-        return entry == null ? false : entry.contains(bitIndex);
+
+    private Bitmap xorTestBitmap2() {
+        Bitmap bitmap2 = new Bitmap();
+        bitmap2.set(1);
+        bitmap2.set(65);
+        bitmap2.set(FIRST_INDEX_ON_LAST_PAGE);
+        bitmap2.set(Bitmap.MAX_INDEX);
+        return bitmap2;
     }
-    
-    
-    public int lowest() {
-        if (entries.isEmpty()) {
-            return -1;
-        }
-        Map.Entry<Integer, Bitmap.Entry> entry = entries.firstEntry();
-        long idx = entry.getValue().bitMap;
-        int result = 0;
-        while ((idx & 0x01L) == 0) {
-            idx = idx >> 1;
-            result++;
-            if (result > 64) {
-                throw new IllegalStateException("Bit count too large");
-            }
-        }
-        return entry.getKey().intValue() * 64 + result;
+
+    @Test
+    public void xorTest() {
+        Bitmap bitmap1 = xorTestBitmap1();
+        Bitmap bitmap2 = xorTestBitmap2();
+
+        bitmap1.xor(bitmap2);
+        assertFalse(bitmap1.contains(1));
+        assertTrue(bitmap1.contains(64));
+        assertTrue(bitmap1.contains(65));
+        assertTrue(bitmap1.contains(FIRST_INDEX_ON_LAST_PAGE));
+        assertFalse(bitmap1.contains(Bitmap.MAX_INDEX));
+
+        bitmap1 = xorTestBitmap1();
+
+        bitmap2.xor(bitmap1);
+        assertFalse(bitmap2.contains(1));
+        assertTrue(bitmap2.contains(64));
+        assertTrue(bitmap2.contains(65));
+        assertTrue(bitmap2.contains(FIRST_INDEX_ON_LAST_PAGE));
+        assertFalse(bitmap2.contains(Bitmap.MAX_INDEX));
+
+        // different number of pages
+        int page3bit = 64 * 3;
+        bitmap2 = xorTestBitmap2();
+        bitmap1.set(page3bit);
+        bitmap1.xor(bitmap2);
+        assertFalse(bitmap1.contains(1));
+        assertTrue(bitmap1.contains(64));
+        assertTrue(bitmap1.contains(65));
+        assertTrue(bitmap1.contains(page3bit));
+        assertTrue(bitmap1.contains(FIRST_INDEX_ON_LAST_PAGE));
+        assertFalse(bitmap1.contains(Bitmap.MAX_INDEX));
+
+        bitmap1 = xorTestBitmap1();
+        bitmap1.set(page3bit);
+        bitmap2.xor(bitmap1);
+        assertFalse(bitmap2.contains(1));
+        assertTrue(bitmap2.contains(64));
+        assertTrue(bitmap2.contains(65));
+        assertTrue(bitmap2.contains(page3bit));
+        assertTrue(bitmap2.contains(FIRST_INDEX_ON_LAST_PAGE));
+        assertFalse(bitmap2.contains(Bitmap.MAX_INDEX));
+
+        // different ending pages
+        bitmap2 = xorTestBitmap2();
+        bitmap1.clear(Bitmap.MAX_INDEX);
+        bitmap1.xor(bitmap2);
+        assertFalse(bitmap1.contains(1));
+        assertTrue(bitmap1.contains(64));
+        assertTrue(bitmap1.contains(65));
+        assertTrue(bitmap1.contains(page3bit));
+        assertTrue(bitmap1.contains(FIRST_INDEX_ON_LAST_PAGE));
+        assertTrue(bitmap1.contains(Bitmap.MAX_INDEX));
+
+        bitmap1 = xorTestBitmap1();
+        bitmap1.set(page3bit);
+        bitmap1.clear(Bitmap.MAX_INDEX);
+        bitmap2.xor(bitmap1);
+        assertFalse(bitmap2.contains(1));
+        assertTrue(bitmap2.contains(64));
+        assertTrue(bitmap2.contains(65));
+        assertTrue(bitmap2.contains(page3bit));
+        assertTrue(bitmap2.contains(FIRST_INDEX_ON_LAST_PAGE));
+        assertTrue(bitmap2.contains(Bitmap.MAX_INDEX));
+        
+        bitmap1 = xorTestBitmap1();
+        bitmap1.xor(bitmap1);
+        assertTrue( bitmap1.isEmpty());
     }
-    
-    
-    public void set(final int bitIndex) {
-        Integer entryIndex = Integer.valueOf(getLongIndex(bitIndex));
-        Entry entry = entries.get(entryIndex);
-        if (entry == null) {
-            entry = new Entry(entryIndex);
-            entries.put(entryIndex, entry);
-        }
-    
-        entry.set(bitIndex);
-    }
-    
-    
-    public void clear(final int bitIndex) {
-    
-        Integer entryIdx = Integer.valueOf(getLongIndex(bitIndex));
-        Entry entry = entries.get(entryIdx);
-        if (entry != null) {
-            entry.clear(bitIndex);
-            if (entry.isEmpty()) {
-                entries.remove(entryIdx);
-            }
-        }
-    }
-    
-    public PrimitiveIterator.OfInt iterator() {
-        return new Iter();
-    }
-    
-    
-    public static int getLongIndex(final int bitIndex) {
-        // An integer divide by 64 is equivalent to a shift of 6 bits if the integer is
-        // positive.
-        // We do not explicitly check for a negative here. Instead we use a
-        // signed shift. Any negative index will produce a negative value
-        // by sign-extension and if used as an index into an array it will throw an
-        // exception.
-        return bitIndex >> DIVIDE_BY_64;
-    }
-    
-    
-    public static long getLongBit(final int bitIndex) {
-        // Bit shifts only use the first 6 bits. Thus it is not necessary to mask this
-        // using 0x3f (63) or compute bitIndex % 64.
-        // Note: If the index is negative the shift will be (64 - (bitIndex & 0x3f)) and
-        // this will identify an incorrect bit.
-        return 1L << bitIndex;
-    }
-    
-    
-    
-    private class Iter implements PrimitiveIterator.OfInt {
-        Iterator<Entry> iterE = entries.values().iterator();
-        Entry entry = null;
-        PrimitiveIterator.OfInt idxIter = null;
-    
-        @Override
-        public boolean hasNext() {
-            if (idxIter == null || !idxIter.hasNext()) {
-                idxIter = nextIdxIter();
-            }
-            return idxIter.hasNext();
-        }
-    
-        private PrimitiveIterator.OfInt nextIdxIter() {
-            entry = nextEntry();
-            return new IdxIter();
-        }
-    
-        private class IdxIter implements PrimitiveIterator.OfInt {
-            final int[] values;
-            int pos;
-            final int offset;
-    
-            IdxIter() {
-                if (entry == null) {
-                    values = new int[0];
-                } else {
-                    values = IndexProducer.fromBitMapProducer(BitMapProducer.fromBitMapArray(entry.bitMap))
-                            .asIndexArray();
-                }
-                pos = 0;
-                offset = entry.index.intValue();
-            }
-    
-            @Override
-            public boolean hasNext() {
-                return pos < values.length;
-            }
-    
-            @Override
-            public int nextInt() {
-                return values[pos++] + offset;
-            }
-        }
-    
-        private Entry nextEntry() {
-            if (iterE.hasNext()) {
-                return iterE.next();
-            } 
-            return null;
-        }
-    
-        @Override
-        public int nextInt() {
-            return idxIter.nextInt();
-        }
-    }
-    }
-    
-     */
 }

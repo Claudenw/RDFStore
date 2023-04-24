@@ -27,6 +27,8 @@ import org.apache.jena.sparql.core.Transactional;
 import org.apache.jena.sparql.core.Transactional.Promote;
 import org.apache.jena.util.iterator.ExtendedIterator;
 import org.apache.jena.util.iterator.WrappedIterator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.xenei.rdfstore.IdxData;
 import org.xenei.rdfstore.LongList;
 import org.xenei.rdfstore.Store;
@@ -39,6 +41,8 @@ public class Quads implements Transactional, AutoCloseable {
     private final TrieStore<ByteBuffer> store;
     // map of uriIdx to triples.
     private final LongList<Bitmap>[] maps;
+    
+    private final static Logger LOG = LoggerFactory.getLogger( Quads.class );
 
     @SuppressWarnings("unchecked")
     public Quads() {
@@ -290,6 +294,8 @@ public class Quads implements Transactional, AutoCloseable {
             }
             return result;
         } catch (Exception e) {
+            e.printStackTrace();
+            LOG.error( "Error in txn:"+e.getMessage(), e );
             if (started) {
                 abort();
             }
