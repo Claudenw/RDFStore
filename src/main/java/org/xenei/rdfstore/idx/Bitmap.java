@@ -17,6 +17,8 @@ public class Bitmap {
     public static final long MAX_UNSIGNED_INT = 0xFFFF_FFFFL;
 
     public static final long MAX_INDEX = Long.SIZE * MAX_UNSIGNED_INT + 63;
+    
+    public static final long NO_INDEX = -1L;
 
     private static Comparator<Integer> UNSIGNED_COMPARATOR = new Comparator<Integer>() {
         @Override
@@ -63,9 +65,18 @@ public class Bitmap {
         }
     }
     
-    public static Bitmap xor(Bitmap left, Bitmap right) {        
+    public static Bitmap xor(Bitmap left, Bitmap right) {
+        
         Bitmap result = new Bitmap();
         if (left == right) {
+            return result;
+        }
+        if (left == null && right != null) {
+            copyRemaining( result, right, right.entries.isEmpty() ? null : right.entries.firstKey());
+            return result;
+        }
+        if (left!= null && right == null) {
+            copyRemaining( result, left, left.entries.isEmpty() ? null : left.entries.firstKey());
             return result;
         }
         Integer leftPage = left==null || left.entries.isEmpty()? null : left.entries.firstKey();
@@ -102,8 +113,8 @@ public class Bitmap {
         if (this == other) {
             this.entries.clear();
         } else {
-        Integer thisPage = this.entries.firstKey();
-        Integer otherPage = other.entries.firstKey();
+        Integer thisPage = this.entries.isEmpty()? null : this.entries.firstKey();
+        Integer otherPage = other.entries.isEmpty()? null : other.entries.firstKey();
         while( thisPage != null && otherPage != null) {
             int i = Integer.compareUnsigned(thisPage, otherPage);
             if (i<0) {
@@ -263,7 +274,7 @@ public class Bitmap {
      */
     public long lowest() {
         if (entries.isEmpty()) {
-            return -1;
+            return NO_INDEX;
         }
         Map.Entry<Integer, Bitmap.Entry> entry = entries.firstEntry();
         long idx = entry.getValue().bitMap;

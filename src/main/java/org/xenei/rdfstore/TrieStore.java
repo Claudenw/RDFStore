@@ -15,6 +15,7 @@ import org.apache.commons.collections4.trie.PatriciaTrie;
 import org.apache.jena.query.ReadWrite;
 import org.xenei.rdfstore.idx.Bitmap;
 import org.xenei.rdfstore.txn.TxnHandler;
+import org.xenei.rdfstore.txn.TxnId;
 
 public class TrieStore<T> implements Store<T> {
 
@@ -22,7 +23,6 @@ public class TrieStore<T> implements Store<T> {
     private final Trie<String, IdxData<T>> trie;
     private final Bitmap deleted;
     private final Function<T, String> keyFunc;
-
     private final TxnHandler txnHandler;
 
     /**
@@ -38,12 +38,20 @@ public class TrieStore<T> implements Store<T> {
      * @param keyFunc the function to convert the item to a string for the key.
      */
     public TrieStore(Function<T, String> keyFunc) {
+        TxnId txnId = () -> "TrieStore";
         lst = new LongList<T>();
         trie = new PatriciaTrie<IdxData<T>>();
         deleted = new Bitmap();
         this.keyFunc = keyFunc;
-        txnHandler = new TxnHandler(this::prepareBegin, this::execCommit, this::execAbort, this::execEnd);
+        lst.setTxnId( txnId );
+        txnHandler = new TxnHandler(txnId, this::prepareBegin, this::execCommit, this::execAbort, this::execEnd);
     }
+    
+    public void setTxnId(TxnId prefix) {
+        txnHandler.setTxnId(prefix);
+        lst.setTxnId(prefix);
+    }
+
 
     Map<String, IdxData<T>> txnAdd;
     Set<String> txnDel;
@@ -67,6 +75,7 @@ public class TrieStore<T> implements Store<T> {
                 lst.remove(removed.idx);
             }
         });
+        lst.commit();
         deleted.xor(txnUsed);
         txnAdd = null;
         txnDel = null;
@@ -90,28 +99,30 @@ public class TrieStore<T> implements Store<T> {
     @Override
     public Result register(T item) {
         String key = keyFunc.apply(item);
+        
         return txnHandler.doInTxn(READ, () -> {
-            IdxData<T> entry = txnAdd.get(key);
-            if (entry == null) {
-                entry = trie.get(key);
+            
+            long idx = get(item);
+            if (idx > NO_INDEX) {
+                return new Result( true, idx );
             }
-            if (entry == null) {
-                Bitmap txnDeleted = Bitmap.xor(txnUsed, deleted);
-                long deletedIdx = txnDeleted.lowest();
-                if (deletedIdx == -1) {
-                    entry = lst.add(item);
-                    txnAdd.put(key, entry);
-                } else {
-                    txnUsed.set(deletedIdx);
-                    entry = new IdxData<T>((int) deletedIdx, item);
-                    lst.set(entry);
-                    txnAdd.put(key, entry);
-                }
+            if (txnDel.contains(key)) {
                 txnDel.remove(key);
-                return new Result(false, entry.idx);
-
+                return new Result( false, idx );
             }
-            return new Result(true, entry.idx);
+            IdxData<T> entry = null;
+            Bitmap txnDeleted = Bitmap.xor(txnUsed, deleted);
+            long deletedIdx = txnDeleted.lowest();
+            if (deletedIdx == NO_INDEX) {
+                entry = lst.add(item);
+                txnAdd.put(key, entry);
+            } else {
+                txnUsed.set(deletedIdx);
+                entry = new IdxData<T>(deletedIdx, item);
+                lst.set(entry);
+                txnAdd.put(key, entry);
+            }
+            return new Result(false, entry.idx);
         });
     }
 
@@ -163,19 +174,38 @@ public class TrieStore<T> implements Store<T> {
             return lst.get(idx);
         });
     }
+    
+    @Override
+    public long get(T item) {
+        String key = keyFunc.apply(item);
+        return txnHandler.doInTxn(READ, () -> {           
+            if (txnDel.contains(key)) {
+                return NO_INDEX;
+            }
+            IdxData<T> entry = txnAdd.get(key);
+            if (entry == null) {
+                entry = trie.get(key);
+            }
+            return entry == null? NO_INDEX : entry.idx;
+        });
+    }
 
+    @Override
     public void begin(ReadWrite readWrite) {
         txnHandler.begin(readWrite);
     }
 
+    @Override
     public void commit() {
         txnHandler.commit();
     }
 
+    @Override
     public void abort() {
         txnHandler.abort();
     }
 
+    @Override
     public void end() {
         txnHandler.end();
     }

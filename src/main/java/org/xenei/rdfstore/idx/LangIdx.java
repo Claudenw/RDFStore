@@ -5,4 +5,8 @@ package org.xenei.rdfstore.idx;
  *
  */
 public class LangIdx extends AbstractIndex<String> {
+
+    public LangIdx() {
+        super(() -> "LangIdx");
+    }
 }

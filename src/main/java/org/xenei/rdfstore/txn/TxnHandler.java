@@ -4,6 +4,7 @@ import static java.lang.ThreadLocal.withInitial;
 import static org.apache.jena.query.ReadWrite.WRITE;
 import static org.apache.jena.query.ReadWrite.READ;
 
+import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -13,7 +14,7 @@ import org.apache.jena.shared.LockMRPlusSW;
 import org.apache.jena.sparql.JenaTransactionException;
 import org.apache.jena.sparql.core.mem.TransactionalComponent;
 
-public class TxnHandler implements TransactionalComponent {
+public class TxnHandler implements TransactionalComponent, TxnId {
 
     /**
      * This lock imposes the multiple-reader and single-writer policy of
@@ -28,13 +29,24 @@ public class TxnHandler implements TransactionalComponent {
     private TxnExec execCommit;
     private TxnExec execAbort;
     private TxnExec execEnd;
+    private TxnId txnId;
 
-    public TxnHandler(Consumer<ReadWrite> prepareBegin, TxnExec execCommit, TxnExec execAbort, TxnExec execEnd)
+    public TxnHandler(TxnId txnId, Consumer<ReadWrite> prepareBegin, TxnExec execCommit, TxnExec execAbort, TxnExec execEnd)
     {
+        this.txnId = txnId;
         this.prepareBegin = prepareBegin;
         this.execCommit = execCommit;
         this.execAbort = execAbort;
         this.execEnd = execEnd;
+    }
+    
+    public void setTxnId(TxnId prefix) {
+        txnId = TxnId.setParent(prefix, txnId);
+    }
+    
+    @Override
+    public String txnId() {
+        return txnId.txnId();
     }
 
     public boolean isInTransaction() {
@@ -44,9 +56,18 @@ public class TxnHandler implements TransactionalComponent {
     public ReadWrite transactionMode() {
         return transactionMode.get();
     }
+    
+    private void logState(String action, ReadWrite readWrite) {
+        System.out.println( String.format( "%s %s %s Txn:%s mode:%s",action, txnId.txnId(), readWrite, isInTransaction.get(), transactionMode.get()));
+    }
+    
+    public void log(String str) {
+        System.out.println( String.format( "%s %s ", txnId.txnId(),  str ));
+    }
 
     @Override
     public void begin(ReadWrite readWrite) {
+        logState("begin", readWrite);
         if (isInTransaction.get())
             throw new JenaTransactionException("Transactions cannot be nested!");
         isInTransaction.set(true);
@@ -58,10 +79,12 @@ public class TxnHandler implements TransactionalComponent {
 
     @Override
     public void commit() {
+        logState("commit",null);
         if (!isInTransaction.get())
             throw new JenaTransactionException("Tried to commit outside a transaction!");
-        if (transactionMode().equals(WRITE))
+        if (transactionMode().equals(WRITE)) {
             execCommit.exec();
+        }
         finishTransaction();
     }
 
@@ -74,6 +97,7 @@ public class TxnHandler implements TransactionalComponent {
 
     @Override
     public void abort() {
+        logState("abort",null);
         if (!isInTransaction())
             throw new JenaTransactionException("Tried to abort outside a transaction!");
         if (transactionMode().equals(WRITE))
@@ -83,6 +107,7 @@ public class TxnHandler implements TransactionalComponent {
 
     @Override
     public void end() {
+        logState("end",null);
         if (isInTransaction()) {
             if (transactionMode().equals(WRITE)) {
                 String msg = "end() called for WRITE transaction without commit or abort having been called. This causes a forced abort.";
@@ -112,7 +137,11 @@ public class TxnHandler implements TransactionalComponent {
         try {
             T result = supplier.get();
             if (started) {
-                commit();
+                if (readWrite.equals(WRITE)) {
+                    commit();
+                } else {
+                    end();
+                }
             }
             return result;
         } catch (Exception e) {

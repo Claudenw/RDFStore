@@ -35,6 +35,7 @@ import org.xenei.rdfstore.Store;
 import org.xenei.rdfstore.TrieStore;
 import org.xenei.rdfstore.idx.Bitmap;
 import org.xenei.rdfstore.txn.TxnExec;
+import org.xenei.rdfstore.txn.TxnId;
 
 public class Quads implements Transactional, AutoCloseable {
     private final URIs uris;
@@ -46,14 +47,17 @@ public class Quads implements Transactional, AutoCloseable {
 
     @SuppressWarnings("unchecked")
     public Quads() {
+        TxnId txnId = () -> "Quads";
         uris = new URIs();
+        uris.setTxnId( txnId );
         store = new TrieStore<ByteBuffer>(ByteBuffer::toString);
+        store.setTxnId( txnId );
         maps = new LongList[Idx.values().length];
 
         for (Idx idx : Idx.values()) {
             maps[idx.ordinal()] = new LongList<Bitmap>();
+            maps[idx.ordinal()].setTxnId( TxnId.setParent(txnId, () -> "map"+idx.ordinal()) );
         }
-
     }
 
     /**
@@ -179,12 +183,14 @@ public class Quads implements Transactional, AutoCloseable {
     private void _begin(TxnType txnType, ReadWrite readWrite) {
         // Takes Writer lock first, then system lock.
         startTransaction(txnType, readWrite);
+        System.out.println( "BEGIN >>> ");
         withLock(systemLock, () -> {
             Arrays.stream(maps).forEach(t -> t.begin(readWrite));
-            store.begin(WRITE);
-            uris.begin(WRITE);
+            store.begin(readWrite); // should this be write
+            uris.begin(readWrite); // should this be write?
             version.set(generation.get());
         });
+        System.out.println( "<<< BEGIN");
     }
 
     @Override
@@ -217,6 +223,7 @@ public class Quads implements Transactional, AutoCloseable {
     }
 
     private void _commit() {
+        System.out.println( "COMMIT >>>" );
         withLock(systemLock, () -> {
             Arrays.stream(maps).forEach(t -> t.commit());
             store.commit();
@@ -228,15 +235,18 @@ public class Quads implements Transactional, AutoCloseable {
                 generation.incrementAndGet();
             }
         });
+        System.out.println( "<<< COMMIT");
     }
 
     @Override
     public void abort() {
+        System.out.println( "ABORT >>>");
         if (!isInTransaction())
             throw new JenaTransactionException("Tried to abort outside a transaction!");
         if (transactionMode().equals(WRITE))
             _abort();
         finishTransaction();
+        System.out.println( "<<< ABORT");
     }
 
     private void _abort() {
@@ -249,6 +259,7 @@ public class Quads implements Transactional, AutoCloseable {
 
     @Override
     public void end() {
+        System.out.println( "END >>> ");
         if (isInTransaction()) {
             if (transactionMode().equals(WRITE)) {
                 String msg = "end() called for WRITE transaction without commit or abort having been called. This causes a forced abort.";
@@ -256,11 +267,11 @@ public class Quads implements Transactional, AutoCloseable {
                 _abort();
                 finishTransaction();
                 throw new JenaTransactionException(msg);
-            } else {
-                _end();
             }
+            _end();
             finishTransaction();
         }
+        System.out.println( "<<< END ");
     }
 
     private void _end() {
@@ -290,7 +301,11 @@ public class Quads implements Transactional, AutoCloseable {
         try {
             T result = supplier.get();
             if (started) {
-                commit();
+                if (readWrite.equals( WRITE) ) {
+                    commit();
+                } else {
+                    end();
+                }
             }
             return result;
         } catch (Exception e) {
@@ -356,7 +371,10 @@ public class Quads implements Transactional, AutoCloseable {
     private Bitmap merge(Bitmap map, Node n, Idx idx) {
         Bitmap bitmap = null;
         if (n != null) {
-            long l = uris.register(n);
+            long l = uris.get(n);
+            if (l <= Store.NO_INDEX) {
+                return bitmap;
+            }
             bitmap = maps[idx.ordinal()].get(l);
             if (map == null) {
                 return bitmap;
@@ -394,7 +412,7 @@ public class Quads implements Transactional, AutoCloseable {
                     bitmap = merge(bitmap, n, idx);
                 }
             }
-            return WrappedIterator.create(new IdxQuadIterator(bitmap)).mapWith(mapper);
+            return bitmap == null ? WrappedIterator.emptyIterator() : WrappedIterator.create(new IdxQuadIterator(bitmap)).mapWith(mapper);
         });
     }
 

@@ -10,6 +10,7 @@ import org.apache.jena.query.ReadWrite;
 import org.xenei.rdfstore.IdxData;
 import org.xenei.rdfstore.txn.TxnExec;
 import org.xenei.rdfstore.txn.TxnHandler;
+import org.xenei.rdfstore.txn.TxnId;
 
 import static org.apache.jena.query.ReadWrite.READ;
 import static org.apache.jena.query.ReadWrite.WRITE;
@@ -20,11 +21,15 @@ public class AbstractIndex<T> implements Index<T> {
     private final Map<T, IdxData<Bitmap>> map;
     private final TxnHandler txnHandler;
 
-    public AbstractIndex() {
-        map = new HashMap<>();;
-        txnHandler = new TxnHandler(this::prepareBegin, this::execCommit, this::execAbort, this::execEnd);
+    public AbstractIndex(TxnId txnId) {
+        map = new HashMap<>();
+        txnHandler = new TxnHandler(txnId, this::prepareBegin, this::execCommit, this::execAbort, this::execEnd);
     }
     
+    public void setTxnId(TxnId prefix) {
+        txnHandler.setTxnId(prefix);
+    }
+
     private Map<T,IdxData<Bitmap>> txnAddMap;
     private Set<T> txnDelSet;
     
@@ -119,6 +124,5 @@ public class AbstractIndex<T> implements Index<T> {
     public void end() {
         txnHandler.end();
     }
-    
-    
+
 }

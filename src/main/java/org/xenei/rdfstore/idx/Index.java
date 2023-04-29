@@ -1,6 +1,7 @@
 package org.xenei.rdfstore.idx;
 
 import org.apache.jena.sparql.core.mem.TransactionalComponent;
+import org.xenei.rdfstore.txn.TxnId;
 
 /**
  * An index that associates bitmaps with items and enables the turning on or off

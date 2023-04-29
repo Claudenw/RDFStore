@@ -25,7 +25,7 @@ public class TxnHandlerTest {
     
     @BeforeEach
     public void setup() {
-        handler = new TxnHandler(this::execBegin, this::execCommit, this::execAbort, this::execEnd );
+        handler = new TxnHandler(()->"Testing", this::execBegin, this::execCommit, this::execAbort, this::execEnd );
         beginCount = 0;
         commitCount = 0;
         abortCount = 0;

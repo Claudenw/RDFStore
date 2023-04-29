@@ -14,6 +14,7 @@ import org.apache.jena.sparql.core.mem.TransactionalComponent;
 import org.apache.jena.util.iterator.ExtendedIterator;
 import org.apache.jena.util.iterator.WrappedIterator;
 import org.xenei.rdfstore.txn.TxnHandler;
+import org.xenei.rdfstore.txn.TxnId;
 
 /**
  * An implementation of a list like structure that can hold up to Long.MAX_VALUE
@@ -35,7 +36,11 @@ public class LongList<T> implements TransactionalComponent {
         this.pages = new ArrayList<NavigableSet<IdxData<T>>>();
         pages.add(new TreeSet<IdxData<T>>());
         this.itemCount = 0;
-        this.txnHandler = new TxnHandler(this::prepareBegin, this::execCommit, this::execAbort, this::execEnd);
+        this.txnHandler = new TxnHandler(() -> "LongList", this::prepareBegin, this::execCommit, this::execAbort, this::execEnd);
+    }
+    
+    public void setTxnId(TxnId prefix) {
+        txnHandler.setTxnId(prefix);
     }
 
     private static void checkIndex(long idx) {

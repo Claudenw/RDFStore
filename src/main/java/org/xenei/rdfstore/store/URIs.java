@@ -17,6 +17,7 @@ import org.xenei.rdfstore.idx.Bitmap;
 import org.xenei.rdfstore.idx.LangIdx;
 import org.xenei.rdfstore.idx.NumberIdx;
 import org.xenei.rdfstore.txn.TxnHandler;
+import org.xenei.rdfstore.txn.TxnId;
 
 public class URIs implements TransactionalComponent {
     private final TrieStore<Node> store;
@@ -24,12 +25,25 @@ public class URIs implements TransactionalComponent {
     private final AbstractIndex<String> languages;
     private final TxnHandler txnHandler;
 
+
     public URIs() {
+        TxnId txnId = () -> "URIs";
         store = new TrieStore<Node>(URIs::asString);
         numbers = new NumberIdx();
         languages = new LangIdx();
-        txnHandler = new TxnHandler(this::prepareBegin, this::execCommit, this::execAbort, this::execEnd);
+        numbers.setTxnId( txnId );
+        languages.setTxnId( txnId );
+        store.setTxnId( txnId );
+        txnHandler = new TxnHandler(txnId, this::prepareBegin, this::execCommit, this::execAbort, this::execEnd);
     }
+    
+    public void setTxnId(TxnId prefix) {
+        txnHandler.setTxnId(prefix);
+        numbers.setTxnId( prefix );
+        languages.setTxnId( prefix );
+        store.setTxnId( prefix );
+    }
+
 
     // ** ACCESS CODE
 
@@ -95,6 +109,11 @@ public class URIs implements TransactionalComponent {
         });
     }
 
+    public long get(Node node) {
+        return txnHandler.doInTxn(READ, () -> {
+            return store.get(node);
+        });
+    }
     public Node get(long idx) {
         return txnHandler.doInTxn(READ, () -> {
             return store.get(idx);
