@@ -1,31 +1,23 @@
 package org.xenei.rdfstore.store;
 
-import static java.lang.ThreadLocal.withInitial;
-import static org.apache.jena.query.ReadWrite.WRITE;
-import static org.apache.jena.query.ReadWrite.READ;
+import static org.apache.jena.query.TxnType.READ;
+import static org.apache.jena.query.TxnType.WRITE;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.PrimitiveIterator;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
-import java.util.function.Supplier;
 
 import org.apache.commons.collections4.bloomfilter.BitMap;
-import org.apache.jena.atlas.lib.InternalErrorException;
 import org.apache.jena.graph.Node;
 import org.apache.jena.graph.Triple;
 import org.apache.jena.query.ReadWrite;
 import org.apache.jena.query.TxnType;
-import org.apache.jena.shared.Lock;
-import org.apache.jena.shared.LockMRPlusSW;
-import org.apache.jena.sparql.JenaTransactionException;
 import org.apache.jena.sparql.core.Quad;
 import org.apache.jena.sparql.core.Transactional;
-import org.apache.jena.sparql.core.Transactional.Promote;
 import org.apache.jena.util.iterator.ExtendedIterator;
+import org.apache.jena.util.iterator.NiceIterator;
 import org.apache.jena.util.iterator.WrappedIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,7 +26,7 @@ import org.xenei.rdfstore.LongList;
 import org.xenei.rdfstore.Store;
 import org.xenei.rdfstore.TrieStore;
 import org.xenei.rdfstore.idx.Bitmap;
-import org.xenei.rdfstore.txn.TxnExec;
+import org.xenei.rdfstore.txn.TxnController;
 import org.xenei.rdfstore.txn.TxnId;
 
 public class Quads implements Transactional, AutoCloseable {
@@ -42,244 +34,50 @@ public class Quads implements Transactional, AutoCloseable {
     private final TrieStore<ByteBuffer> store;
     // map of uriIdx to triples.
     private final LongList<Bitmap>[] maps;
-    
-    private final static Logger LOG = LoggerFactory.getLogger( Quads.class );
+
+    private final static Logger LOG = LoggerFactory.getLogger(Quads.class);
+
+    private final TxnController txnController;
 
     @SuppressWarnings("unchecked")
     public Quads() {
         TxnId txnId = () -> "Quads";
         uris = new URIs();
-        uris.setTxnId( txnId );
+        uris.setTxnId(txnId);
         store = new TrieStore<ByteBuffer>(ByteBuffer::toString);
-        store.setTxnId( txnId );
+        store.setTxnId(txnId);
         maps = new LongList[Idx.values().length];
 
         for (Idx idx : Idx.values()) {
             maps[idx.ordinal()] = new LongList<Bitmap>();
-            maps[idx.ordinal()].setTxnId( TxnId.setParent(txnId, () -> "map"+idx.ordinal()) );
-        }
-    }
-
-    /**
-     * This lock imposes the multiple-reader and single-writer policy of
-     * transactions
-     */
-    private final Lock transactionLock = new LockMRPlusSW();
-
-    /**
-     * Transaction lifecycle operations must be atomic, especially
-     * {@link Transactional#begin} and {@link Transactional#commit}.
-     * <p>
-     * There are changes to be made to several datastructures and this insures that
-     * they are made consistently.
-     * <p>
-     * Lock order must be writer lock, system lock. If a transaction takes the
-     * writerLock, it is a writer, and there is only one writer.
-     */
-    private final ReentrantLock systemLock = new ReentrantLock(true);
-
-    /**
-     * Dataset version. A write transaction increments this in commit.
-     */
-    private final AtomicLong generation = new AtomicLong(0);
-    private final ThreadLocal<Long> version = withInitial(() -> 0L);
-
-    private final ThreadLocal<Boolean> isInTransaction = withInitial(() -> false);
-
-    private final ThreadLocal<TxnType> transactionType = withInitial(() -> null);
-    // Current state.
-    private final ThreadLocal<ReadWrite> transactionMode = withInitial(() -> null);
-
-    // ** TRANSACTION CODE
-
-    @Override
-    public boolean isInTransaction() {
-        return isInTransaction.get();
-    }
-
-    protected void isInTransaction(final boolean b) {
-        isInTransaction.set(b);
-    }
-
-    /**
-     * @return the current mode of the transaction in progress
-     */
-    @Override
-    public ReadWrite transactionMode() {
-        return transactionMode.get();
-    }
-
-    @Override
-    public TxnType transactionType() {
-        return transactionType.get();
-    }
-
-    private void transactionMode(final ReadWrite readWrite) {
-        transactionMode.set(readWrite);
-    }
-
-    private static void withLock(java.util.concurrent.locks.Lock lock, Runnable action) {
-        lock.lock();
-        try {
-            action.run();
-        } finally {
-            lock.unlock();
-        }
-    }
-
-    /** Called transaction start code at most once per transaction. */
-    private void startTransaction(TxnType txnType, ReadWrite mode) {
-        transactionLock.enterCriticalSection(mode.equals(ReadWrite.READ)); // get the dataset write lock, if needed.
-        transactionType.set(txnType);
-        transactionMode(mode);
-        isInTransaction(true);
-    }
-
-    /** Called transaction ending code at most once per transaction. */
-    private void finishTransaction() {
-        isInTransaction.remove();
-        transactionType.remove();
-        transactionMode.remove();
-        version.remove();
-        transactionLock.leaveCriticalSection();
-    }
-
-    private void _promote(boolean readCommited) {
-        // Outside lock.
-        if (!readCommited && version.get() != generation.get()) {
-            // This tests for any committed writers since this transaction started.
-            // This does not catch the case of a currently active writer
-            // that has not gone to commit or abort yet.
-            // The final test is after we obtain the transactionLock.
-            throw new JenaTransactionException("Dataset changed - can't promote");
+            maps[idx.ordinal()].setTxnId(TxnId.setParent(txnId, () -> "map" + idx.ordinal()));
         }
 
-        // Blocking on other writers.
-        transactionLock.enterCriticalSection(Lock.WRITE);
-        // Check again now we are inside the lock.
-        if (!readCommited && version.get() != generation.get()) {
-            // Can't promote - release the lock.
-            transactionLock.leaveCriticalSection();
-            throw new JenaTransactionException("Concurrent writer changed the dataset : can't promote");
-        }
-        // We have the writer lock and we have promoted!
-        withLock(systemLock, () -> {
-            Arrays.stream(maps).forEach(t -> t.begin(WRITE));
-            store.begin(WRITE);
-            uris.begin(WRITE);
-            transactionMode(WRITE);
-            if (readCommited)
-                version.set(generation.get());
-        });
+        txnController = new TxnController(txnId, this::prepareBegin, this::commitF, this::abortF, this::endF);
     }
 
-    @Override
-    public void begin(TxnType txnType) {
-        if (isInTransaction())
-            throw new JenaTransactionException("Transactions cannot be nested!");
-        _begin(txnType, TxnType.initial(txnType));
+    private void prepareBegin(ReadWrite readWrite) {
+        Arrays.stream(maps).forEach(t -> t.begin(readWrite));
+        store.begin(readWrite); // should this be write
+        uris.begin(readWrite); // should this be write?
     }
 
-    private void _begin(TxnType txnType, ReadWrite readWrite) {
-        // Takes Writer lock first, then system lock.
-        startTransaction(txnType, readWrite);
-        System.out.println( "BEGIN >>> ");
-        withLock(systemLock, () -> {
-            Arrays.stream(maps).forEach(t -> t.begin(readWrite));
-            store.begin(readWrite); // should this be write
-            uris.begin(readWrite); // should this be write?
-            version.set(generation.get());
-        });
-        System.out.println( "<<< BEGIN");
+    private void commitF() {
+        Arrays.stream(maps).forEach(t -> t.commit());
+        store.commit(); // should this be write
+        uris.commit(); // should this be write?
     }
 
-    @Override
-    public boolean promote(Promote promoteMode) {
-        if (!isInTransaction())
-            throw new JenaTransactionException("Tried to promote outside a transaction!");
-        if (transactionMode().equals(ReadWrite.WRITE))
-            return true;
-
-        if (transactionType() == TxnType.READ)
-            return false;
-
-        boolean readCommitted = (promoteMode == Promote.READ_COMMITTED);
-
-        try {
-            _promote(readCommitted);
-            return true;
-        } catch (JenaTransactionException ex) {
-            return false;
-        }
+    private void abortF() {
+        Arrays.stream(maps).forEach(t -> t.abort());
+        store.abort(); // should this be write
+        uris.abort(); // should this be write?
     }
 
-    @Override
-    public void commit() {
-        if (!isInTransaction())
-            throw new JenaTransactionException("Tried to commit outside a transaction!");
-        if (transactionMode().equals(WRITE))
-            _commit();
-        finishTransaction();
-    }
-
-    private void _commit() {
-        System.out.println( "COMMIT >>>" );
-        withLock(systemLock, () -> {
-            Arrays.stream(maps).forEach(t -> t.commit());
-            store.commit();
-            uris.commit();
-            if (transactionMode().equals(WRITE)) {
-                if (version.get() != generation.get())
-                    throw new InternalErrorException(
-                            String.format("Version=%d, Generation=%d", version.get(), generation.get()));
-                generation.incrementAndGet();
-            }
-        });
-        System.out.println( "<<< COMMIT");
-    }
-
-    @Override
-    public void abort() {
-        System.out.println( "ABORT >>>");
-        if (!isInTransaction())
-            throw new JenaTransactionException("Tried to abort outside a transaction!");
-        if (transactionMode().equals(WRITE))
-            _abort();
-        finishTransaction();
-        System.out.println( "<<< ABORT");
-    }
-
-    private void _abort() {
-        withLock(systemLock, () -> {
-            Arrays.stream(maps).forEach(t -> t.abort());
-            store.abort();
-            uris.abort();
-        });
-    }
-
-    @Override
-    public void end() {
-        System.out.println( "END >>> ");
-        if (isInTransaction()) {
-            if (transactionMode().equals(WRITE)) {
-                String msg = "end() called for WRITE transaction without commit or abort having been called. This causes a forced abort.";
-                // _abort does _end actions inside the lock.
-                _abort();
-                finishTransaction();
-                throw new JenaTransactionException(msg);
-            }
-            _end();
-            finishTransaction();
-        }
-        System.out.println( "<<< END ");
-    }
-
-    private void _end() {
-        withLock(systemLock, () -> {
-            Arrays.stream(maps).forEach(t -> t.end());
-            store.end();
-            uris.end();
-        });
+    private void endF() {
+        Arrays.stream(maps).forEach(t -> t.end());
+        store.end(); // should this be write
+        uris.end(); // should this be write?
     }
 
     @Override
@@ -288,47 +86,11 @@ public class Quads implements Transactional, AutoCloseable {
             abort();
     }
 
-    private boolean startTxnIfNeeded(ReadWrite readWrite) {
-        if (!isInTransaction()) {
-            begin(readWrite);
-            return true;
-        }
-        return false;
-    }
-
-    public <T> T doInTxn(ReadWrite readWrite, Supplier<T> supplier) {
-        boolean started = startTxnIfNeeded(readWrite);
-        try {
-            T result = supplier.get();
-            if (started) {
-                if (readWrite.equals( WRITE) ) {
-                    commit();
-                } else {
-                    end();
-                }
-            }
-            return result;
-        } catch (Exception e) {
-            e.printStackTrace();
-            LOG.error( "Error in txn:"+e.getMessage(), e );
-            if (started) {
-                abort();
-            }
-            throw e;
-        }
-    }
-
-    public void doInTxn(ReadWrite readWrite, TxnExec exec) {
-        doInTxn(readWrite, () -> {
-            exec.exec();
-            return null;
-        });
-    }
-
     // ** STANDARD CODE
 
     public long register(Quad quad) {
-        return doInTxn(WRITE, () -> {
+
+        return txnController.doInTxn(WRITE, () -> {
             if (quad.isTriple()) {
                 return register(Quad.create(Quad.defaultGraphNodeGenerated, quad.asTriple()));
             }
@@ -348,7 +110,7 @@ public class Quads implements Transactional, AutoCloseable {
     }
 
     public void delete(Quad quad) {
-        doInTxn(WRITE, () -> {
+        txnController.doInTxn(WRITE, () -> {
             if (quad.isTriple()) {
                 delete(Quad.create(Quad.defaultGraphNodeGenerated, quad.asTriple()));
             }
@@ -363,7 +125,7 @@ public class Quads implements Transactional, AutoCloseable {
     }
 
     public long size() {
-        return doInTxn(READ, () -> {
+        return txnController.doInTxn(READ, () -> {
             return store.size();
         });
     }
@@ -387,21 +149,21 @@ public class Quads implements Transactional, AutoCloseable {
     }
 
     public Triple asTriple(IdxQuad idx) {
-        return doInTxn(READ, () -> {
+        return txnController.doInTxn(READ, () -> {
             return Triple.create(uris.get(idx.get(Idx.S)), uris.get(idx.get(Idx.P)), uris.get(idx.get(Idx.O)));
         });
 
     }
 
     public Quad asQuad(IdxQuad idx) {
-        return doInTxn(READ, () -> {
+        return txnController.doInTxn(READ, () -> {
             return Quad.create(uris.get(idx.get(Idx.G)), uris.get(idx.get(Idx.S)), uris.get(idx.get(Idx.P)),
                     uris.get(idx.get(Idx.O)));
         });
     }
 
     public <T> ExtendedIterator<T> find(Quad quad, Function<IdxQuad, T> mapper) {
-        return doInTxn(READ, () -> {
+        return txnController.doInTxn(READ, () -> {
             if (quad.isTriple()) {
                 return find(Quad.create(Quad.defaultGraphNodeGenerated, quad.asTriple()), mapper);
             }
@@ -412,7 +174,8 @@ public class Quads implements Transactional, AutoCloseable {
                     bitmap = merge(bitmap, n, idx);
                 }
             }
-            return bitmap == null ? WrappedIterator.emptyIterator() : WrappedIterator.create(new IdxQuadIterator(bitmap)).mapWith(mapper);
+            return bitmap == null ? NiceIterator.emptyIterator()
+                    : WrappedIterator.create(new IdxQuadIterator(bitmap)).mapWith(mapper);
         });
     }
 
@@ -487,6 +250,46 @@ public class Quads implements Transactional, AutoCloseable {
         public int compareTo(IdxQuad other) {
             return buffer.compareTo(other.buffer);
         }
+    }
+
+    @Override
+    public boolean isInTransaction() {
+        return txnController.isInTransaction();
+    }
+
+    @Override
+    public void begin(TxnType type) {
+        txnController.begin(type);
+    }
+
+    @Override
+    public boolean promote(Promote mode) {
+        return txnController.promote(mode);
+    }
+
+    @Override
+    public void commit() {
+        txnController.commit();
+    }
+
+    @Override
+    public void abort() {
+        txnController.abort();
+    }
+
+    @Override
+    public void end() {
+        txnController.end();
+    }
+
+    @Override
+    public ReadWrite transactionMode() {
+        return txnController.transactionMode();
+    }
+
+    @Override
+    public TxnType transactionType() {
+        return txnController.transactionType();
     }
 
 }
