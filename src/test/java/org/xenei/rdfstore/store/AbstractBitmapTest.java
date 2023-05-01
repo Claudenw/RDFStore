@@ -1,31 +1,34 @@
-package org.xenei.rdfstore.idx;
+package org.xenei.rdfstore.store;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.Map;
 import java.util.PrimitiveIterator;
+import java.util.function.Supplier;
 
 import org.junit.jupiter.api.Test;
+import org.xenei.rdfstore.mem.MemBitmap;
 
-public class BitmapTest {
+public abstract class AbstractBitmapTest {
 
     private static final long FIRST_INDEX_ON_LAST_PAGE = Long.SIZE * Bitmap.MAX_UNSIGNED_INT;
 
+    abstract protected Supplier<Bitmap> getSupplier();
+
     @Test
     public void intersectonTest() {
-        Bitmap bitmap1 = new Bitmap();
+        Bitmap bitmap1 = getSupplier().get();
         bitmap1.set(1);
         bitmap1.set(64);
         bitmap1.set(Bitmap.MAX_INDEX);
-        Bitmap bitmap2 = new Bitmap();
+        Bitmap bitmap2 = getSupplier().get();
         bitmap2.set(1);
         bitmap2.set(65);
         bitmap2.set(FIRST_INDEX_ON_LAST_PAGE);
         bitmap2.set(Bitmap.MAX_INDEX);
-        Bitmap result = Bitmap.intersection(bitmap1, bitmap2);
+        Bitmap result = Bitmap.intersection(() -> new MemBitmap(), bitmap1, bitmap2);
         assertTrue(result.contains(1));
         assertFalse(result.contains(64));
         assertFalse(result.contains(FIRST_INDEX_ON_LAST_PAGE));
@@ -34,21 +37,21 @@ public class BitmapTest {
 
     @Test
     public void unionTest() {
-        Bitmap bitmap1 = new Bitmap();
+        Bitmap bitmap1 = getSupplier().get();
         bitmap1.set(1);
         bitmap1.set(Bitmap.MAX_INDEX);
-        Bitmap bitmap2 = new Bitmap();
+        Bitmap bitmap2 = getSupplier().get();
         bitmap2.set(FIRST_INDEX_ON_LAST_PAGE);
         bitmap2.set(64);
 
-        Bitmap result = Bitmap.union(bitmap1, bitmap2);
+        Bitmap result = Bitmap.union(() -> new MemBitmap(), bitmap1, bitmap2);
         assertTrue(result.contains(1));
         assertTrue(result.contains(64));
         assertTrue(result.contains(FIRST_INDEX_ON_LAST_PAGE));
         assertTrue(result.contains(Bitmap.MAX_INDEX));
 
         bitmap1.set(64);
-        result = Bitmap.union(bitmap1, bitmap2);
+        result = Bitmap.union(() -> new MemBitmap(), bitmap1, bitmap2);
         assertTrue(result.contains(1));
         assertTrue(result.contains(64));
         assertTrue(result.contains(FIRST_INDEX_ON_LAST_PAGE));
@@ -71,7 +74,7 @@ public class BitmapTest {
 
     @Test
     public void containsTest() {
-        Bitmap bitmap = new Bitmap();
+        Bitmap bitmap = getSupplier().get();
         bitmap.set(1);
         bitmap.set(64);
         bitmap.set(FIRST_INDEX_ON_LAST_PAGE);
@@ -85,7 +88,7 @@ public class BitmapTest {
 
     @Test
     public void lowestTest() {
-        Bitmap bitmap = new Bitmap();
+        Bitmap bitmap = getSupplier().get();
         bitmap.set(1);
         bitmap.set(64);
         bitmap.set(FIRST_INDEX_ON_LAST_PAGE);
@@ -103,41 +106,37 @@ public class BitmapTest {
 
     @Test
     public void setTest() {
-        Bitmap bitmap = new Bitmap();
+        Bitmap bitmap = getSupplier().get();
         bitmap.set(1);
-        Map.Entry<Integer, Bitmap.Entry> mapEntry = (bitmap.entries.firstEntry());
-        assertEquals(Integer.valueOf(0), mapEntry.getKey());
-        assertEquals(0x2L, mapEntry.getValue().bitMap);
-        assertEquals(mapEntry.getKey(), mapEntry.getValue().index);
+        Bitmap.Entry mapEntry = bitmap.firstEntry();
+        assertEquals(Integer.valueOf(0), mapEntry.index());
+        assertEquals(0x2L, mapEntry.bitmap());
         bitmap.set(64);
-        assertEquals(2, bitmap.entries.size());
-        mapEntry = (bitmap.entries.lastEntry());
-        assertEquals(Integer.valueOf(1), mapEntry.getKey());
-        assertEquals(0x1L, mapEntry.getValue().bitMap);
-        assertEquals(mapEntry.getKey(), mapEntry.getValue().index);
+        assertEquals(2, bitmap.pageCount());
+        mapEntry = bitmap.lastEntry();
+        assertEquals(Integer.valueOf(1), mapEntry.index());
+        assertEquals(0x1L, mapEntry.bitmap());
 
         // check for MaxInt entries
 
         bitmap.set(FIRST_INDEX_ON_LAST_PAGE);
-        assertEquals(3, bitmap.entries.size());
-        mapEntry = (bitmap.entries.lastEntry());
-        assertEquals(Bitmap.MAX_UNSIGNED_INT, Integer.toUnsignedLong(mapEntry.getKey()));
-        assertEquals(0x1L, mapEntry.getValue().bitMap);
-        assertEquals(mapEntry.getKey(), mapEntry.getValue().index);
+        assertEquals(3, bitmap.pageCount());
+        mapEntry = bitmap.lastEntry();
+        assertEquals(Bitmap.MAX_UNSIGNED_INT, Integer.toUnsignedLong(mapEntry.index()));
+        assertEquals(0x1L, mapEntry.bitmap());
 
         bitmap.set(Bitmap.MAX_INDEX);
-        assertEquals(3, bitmap.entries.size());
-        mapEntry = (bitmap.entries.lastEntry());
-        assertEquals(Bitmap.MAX_UNSIGNED_INT, Integer.toUnsignedLong(mapEntry.getKey()));
-        assertEquals(0x8000000000000001L, mapEntry.getValue().bitMap);
-        assertEquals(mapEntry.getKey(), mapEntry.getValue().index);
+        assertEquals(3, bitmap.pageCount());
+        mapEntry = bitmap.lastEntry();
+        assertEquals(Bitmap.MAX_UNSIGNED_INT, Integer.toUnsignedLong(mapEntry.index()));
+        assertEquals(0x8000000000000001L, mapEntry.bitmap());
 
         assertThrows(AssertionError.class, () -> bitmap.set(Bitmap.MAX_INDEX + 1));
     }
 
     @Test
     public void clearTest() {
-        Bitmap bitmap = new Bitmap();
+        Bitmap bitmap = getSupplier().get();
         bitmap.set(1);
         bitmap.set(64);
         bitmap.set(FIRST_INDEX_ON_LAST_PAGE);
@@ -151,30 +150,30 @@ public class BitmapTest {
         assertTrue(bitmap.contains(64));
         assertTrue(bitmap.contains(FIRST_INDEX_ON_LAST_PAGE));
         assertTrue(bitmap.contains(Bitmap.MAX_INDEX));
-        assertEquals(2, bitmap.entries.size());
+        assertEquals(2, bitmap.pageCount());
         bitmap.clear(64);
         assertFalse(bitmap.contains(1));
         assertFalse(bitmap.contains(64));
         assertTrue(bitmap.contains(FIRST_INDEX_ON_LAST_PAGE));
         assertTrue(bitmap.contains(Bitmap.MAX_INDEX));
-        assertEquals(1, bitmap.entries.size());
+        assertEquals(1, bitmap.pageCount());
         bitmap.clear(FIRST_INDEX_ON_LAST_PAGE);
         assertFalse(bitmap.contains(1));
         assertFalse(bitmap.contains(64));
         assertFalse(bitmap.contains(FIRST_INDEX_ON_LAST_PAGE));
         assertTrue(bitmap.contains(Bitmap.MAX_INDEX));
-        assertEquals(1, bitmap.entries.size());
+        assertEquals(1, bitmap.pageCount());
         bitmap.clear(Bitmap.MAX_INDEX);
         assertFalse(bitmap.contains(1));
         assertFalse(bitmap.contains(64));
         assertFalse(bitmap.contains(FIRST_INDEX_ON_LAST_PAGE));
         assertFalse(bitmap.contains(Bitmap.MAX_INDEX));
-        assertEquals(0, bitmap.entries.size());
+        assertEquals(0, bitmap.pageCount());
     }
 
     @Test
     public void iteratorTest() {
-        Bitmap bitmap = new Bitmap();
+        Bitmap bitmap = getSupplier().get();
         bitmap.set(1);
         bitmap.set(64);
         bitmap.set(FIRST_INDEX_ON_LAST_PAGE);
@@ -193,25 +192,25 @@ public class BitmapTest {
 
     @Test
     public void staticXorTest() {
-        Bitmap bitmap1 = new Bitmap();
+        Bitmap bitmap1 = getSupplier().get();
         bitmap1.set(1);
         bitmap1.set(64);
         bitmap1.set(Bitmap.MAX_INDEX);
 
-        Bitmap bitmap2 = new Bitmap();
+        Bitmap bitmap2 = getSupplier().get();
         bitmap2.set(1);
         bitmap2.set(65);
         bitmap2.set(FIRST_INDEX_ON_LAST_PAGE);
         bitmap2.set(Bitmap.MAX_INDEX);
 
-        Bitmap result = Bitmap.xor(bitmap1, bitmap2);
+        Bitmap result = Bitmap.xor(() -> new MemBitmap(), bitmap1, bitmap2);
         assertFalse(result.contains(1));
         assertTrue(result.contains(64));
         assertTrue(result.contains(65));
         assertTrue(result.contains(FIRST_INDEX_ON_LAST_PAGE));
         assertFalse(result.contains(Bitmap.MAX_INDEX));
 
-        result = Bitmap.xor(bitmap2, bitmap1);
+        result = Bitmap.xor(() -> new MemBitmap(), bitmap2, bitmap1);
         assertFalse(result.contains(1));
         assertTrue(result.contains(64));
         assertTrue(result.contains(65));
@@ -221,7 +220,7 @@ public class BitmapTest {
         // different number of pages
         int page3bit = 64 * 3;
         bitmap1.set(page3bit);
-        result = Bitmap.xor(bitmap1, bitmap2);
+        result = Bitmap.xor(() -> new MemBitmap(), bitmap1, bitmap2);
         assertFalse(result.contains(1));
         assertTrue(result.contains(64));
         assertTrue(result.contains(65));
@@ -229,7 +228,7 @@ public class BitmapTest {
         assertTrue(result.contains(FIRST_INDEX_ON_LAST_PAGE));
         assertFalse(result.contains(Bitmap.MAX_INDEX));
 
-        result = Bitmap.xor(bitmap2, bitmap1);
+        result = Bitmap.xor(() -> new MemBitmap(), bitmap2, bitmap1);
         assertFalse(result.contains(1));
         assertTrue(result.contains(64));
         assertTrue(result.contains(65));
@@ -239,7 +238,7 @@ public class BitmapTest {
 
         // different ending pages
         bitmap1.clear(Bitmap.MAX_INDEX);
-        result = Bitmap.xor(bitmap1, bitmap2);
+        result = Bitmap.xor(() -> new MemBitmap(), bitmap1, bitmap2);
         assertFalse(result.contains(1));
         assertTrue(result.contains(64));
         assertTrue(result.contains(65));
@@ -247,20 +246,20 @@ public class BitmapTest {
         assertTrue(result.contains(FIRST_INDEX_ON_LAST_PAGE));
         assertTrue(result.contains(Bitmap.MAX_INDEX));
 
-        result = Bitmap.xor(bitmap2, bitmap1);
+        result = Bitmap.xor(() -> new MemBitmap(), bitmap2, bitmap1);
         assertFalse(result.contains(1));
         assertTrue(result.contains(64));
         assertTrue(result.contains(65));
         assertTrue(result.contains(page3bit));
         assertTrue(result.contains(FIRST_INDEX_ON_LAST_PAGE));
         assertTrue(result.contains(Bitmap.MAX_INDEX));
-        
-        assertTrue( Bitmap.xor(bitmap1, bitmap1).isEmpty() );
+
+        assertTrue(Bitmap.xor(() -> new MemBitmap(), bitmap1, bitmap1).isEmpty());
 
     }
 
     private Bitmap xorTestBitmap1() {
-        Bitmap bitmap1 = new Bitmap();
+        Bitmap bitmap1 = getSupplier().get();
         bitmap1.set(1);
         bitmap1.set(64);
         bitmap1.set(Bitmap.MAX_INDEX);
@@ -268,7 +267,7 @@ public class BitmapTest {
     }
 
     private Bitmap xorTestBitmap2() {
-        Bitmap bitmap2 = new Bitmap();
+        Bitmap bitmap2 = getSupplier().get();
         bitmap2.set(1);
         bitmap2.set(65);
         bitmap2.set(FIRST_INDEX_ON_LAST_PAGE);
@@ -340,9 +339,9 @@ public class BitmapTest {
         assertTrue(bitmap2.contains(page3bit));
         assertTrue(bitmap2.contains(FIRST_INDEX_ON_LAST_PAGE));
         assertTrue(bitmap2.contains(Bitmap.MAX_INDEX));
-        
+
         bitmap1 = xorTestBitmap1();
         bitmap1.xor(bitmap1);
-        assertTrue( bitmap1.isEmpty());
+        assertTrue(bitmap1.isEmpty());
     }
 }

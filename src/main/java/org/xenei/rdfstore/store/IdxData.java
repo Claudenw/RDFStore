@@ -1,4 +1,4 @@
-package org.xenei.rdfstore;
+package org.xenei.rdfstore.store;
 
 import java.util.Iterator;
 import java.util.PrimitiveIterator;

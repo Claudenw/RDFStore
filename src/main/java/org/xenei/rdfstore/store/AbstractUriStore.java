@@ -3,47 +3,47 @@ package org.xenei.rdfstore.store;
 import static org.apache.jena.query.ReadWrite.READ;
 import static org.apache.jena.query.ReadWrite.WRITE;
 
+import java.math.BigDecimal;
 import java.util.Iterator;
 import java.util.PrimitiveIterator;
+import java.util.function.Supplier;
 
 import org.apache.jena.graph.Node;
 import org.apache.jena.graph.impl.LiteralLabel;
 import org.apache.jena.query.ReadWrite;
-import org.apache.jena.sparql.core.mem.TransactionalComponent;
-import org.xenei.rdfstore.Store;
-import org.xenei.rdfstore.TrieStore;
-import org.xenei.rdfstore.idx.AbstractIndex;
-import org.xenei.rdfstore.idx.Bitmap;
+import org.xenei.rdfstore.idx.AbstractIndex.Mapper;
 import org.xenei.rdfstore.idx.LangIdx;
 import org.xenei.rdfstore.idx.NumberIdx;
 import org.xenei.rdfstore.txn.TxnHandler;
 import org.xenei.rdfstore.txn.TxnId;
 
-public class URIs implements TransactionalComponent {
-    private final TrieStore<Node> store;
-    private final AbstractIndex<Number> numbers;
-    private final AbstractIndex<String> languages;
+public class AbstractUriStore implements UriStore {
+    private final Store<Node> store;
+    private final NumberIdx numbers;
+    private final LangIdx languages;
     private final TxnHandler txnHandler;
+    private final Supplier<Bitmap> bitmapSupplier;
 
-
-    public URIs() {
+    public AbstractUriStore(Store<Node> store, Mapper<BigDecimal> numbers, Mapper<String> languages,
+            Supplier<Bitmap> bitmapSupplier) {
         TxnId txnId = () -> "URIs";
-        store = new TrieStore<Node>(URIs::asString);
-        numbers = new NumberIdx();
-        languages = new LangIdx();
-        numbers.setTxnId( txnId );
-        languages.setTxnId( txnId );
-        store.setTxnId( txnId );
+        this.store = store;
+        this.numbers = new NumberIdx(bitmapSupplier, numbers);
+        this.languages = new LangIdx(bitmapSupplier, languages);
+        this.numbers.setTxnId(txnId);
+        this.languages.setTxnId(txnId);
+        this.store.setTxnId(txnId);
+        this.bitmapSupplier = bitmapSupplier;
         txnHandler = new TxnHandler(txnId, this::prepareBegin, this::execCommit, this::execAbort, this::execEnd);
     }
-    
+
+    @Override
     public void setTxnId(TxnId prefix) {
         txnHandler.setTxnId(prefix);
-        numbers.setTxnId( prefix );
-        languages.setTxnId( prefix );
-        store.setTxnId( prefix );
+        numbers.setTxnId(prefix);
+        languages.setTxnId(prefix);
+        store.setTxnId(prefix);
     }
-
 
     // ** ACCESS CODE
 
@@ -58,10 +58,6 @@ public class URIs implements TransactionalComponent {
             return node.getBlankNodeLabel();
         }
         return node.toString(true);
-    }
-
-    private int asInt(long l) {
-        return (int) l;
     }
 
     private void prepareBegin(ReadWrite readWrite) {
@@ -88,6 +84,7 @@ public class URIs implements TransactionalComponent {
         numbers.end();
     }
 
+    @Override
     public long register(Node node) {
         return txnHandler.doInTxn(WRITE, () -> {
             // String key = asString(node);
@@ -97,11 +94,12 @@ public class URIs implements TransactionalComponent {
 
                     LiteralLabel label = node.getLiteral();
                     if (label.isXML()) {
-                        if (Number.class.isAssignableFrom(label.getDatatype().getJavaClass())) {
-                            numbers.register((Number) label.getValue(), asInt(result.index));
+                        BigDecimal d = NumberIdx.parse(label);
+                        if (d != null) {
+                            numbers.register(d, result.index);
                         }
                     } else {
-                        languages.register(node.getLiteral().language(), asInt(result.index));
+                        languages.register(node.getLiteral().language(), result.index);
                     }
                 }
             }
@@ -109,17 +107,21 @@ public class URIs implements TransactionalComponent {
         });
     }
 
+    @Override
     public long get(Node node) {
         return txnHandler.doInTxn(READ, () -> {
             return store.get(node);
         });
     }
+
+    @Override
     public Node get(long idx) {
         return txnHandler.doInTxn(READ, () -> {
             return store.get(idx);
         });
     }
 
+    @Override
     public Iterator<Node> iterator(PrimitiveIterator.OfLong iter) {
         return new Iterator<Node>() {
             PrimitiveIterator.OfLong i = iter;
@@ -156,29 +158,4 @@ public class URIs implements TransactionalComponent {
     public void end() {
         txnHandler.end();
     }
-
-    public static class Result {
-
-        private final Bitmap[] bitmap = new Bitmap[3];
-
-        public void set(Idx idx, int triple) {
-            int i = idx.ordinal();
-            if (bitmap[i] == null) {
-                bitmap[i] = new Bitmap();
-            }
-            bitmap[i].set(triple);
-        }
-
-        public void clear(Idx idx, int triple) {
-            int i = idx.ordinal();
-            if (bitmap[i] != null) {
-                bitmap[i].clear(triple);
-            }
-        }
-
-        public Bitmap get(Idx idx) {
-            return bitmap[idx.ordinal()];
-        }
-    }
-
 }

@@ -13,8 +13,7 @@ public class TxnHandler extends TxnExecutor implements TransactionalComponent {
     private final TxnExec abortF;
     private final TxnExec endF;
 
-    public TxnHandler(TxnId txnId, Consumer<ReadWrite> prepareBegin, TxnExec commitF, TxnExec abortF,
-            TxnExec endF) {
+    public TxnHandler(TxnId txnId, Consumer<ReadWrite> prepareBegin, TxnExec commitF, TxnExec abortF, TxnExec endF) {
         super(txnId);
         this.prepareBegin = prepareBegin;
         this.commitF = commitF;

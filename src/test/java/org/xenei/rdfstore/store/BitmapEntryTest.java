@@ -1,4 +1,4 @@
-package org.xenei.rdfstore.idx;
+package org.xenei.rdfstore.store;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -36,24 +36,24 @@ public class BitmapEntryTest {
     @Test
     public void setTest() {
         Bitmap.Entry entry = new Bitmap.Entry(0, 3);
-        assertEquals(0x3L, entry.bitMap);
+        assertEquals(0x3L, entry.bitmap());
         entry.set(2);
-        assertEquals(0x7L, entry.bitMap);
+        assertEquals(0x7L, entry.bitmap());
         entry.set(3);
-        assertEquals(0xFL, entry.bitMap);
+        assertEquals(0xFL, entry.bitmap());
     }
 
     @Test
     public void clearTest() {
         Bitmap.Entry entry = new Bitmap.Entry(0, 0xFL);
         entry.clear(2);
-        assertEquals(0xBL, entry.bitMap);
+        assertEquals(0xBL, entry.bitmap());
         entry.clear(3);
-        assertEquals(0x3L, entry.bitMap);
+        assertEquals(0x3L, entry.bitmap());
         entry.clear(0);
-        assertEquals(0x2L, entry.bitMap);
+        assertEquals(0x2L, entry.bitmap());
         entry.clear(1);
-        assertEquals(0x0L, entry.bitMap);
+        assertEquals(0x0L, entry.bitmap());
     }
 
     @Test
@@ -74,11 +74,11 @@ public class BitmapEntryTest {
         Bitmap.Entry entry1 = new Bitmap.Entry(0, 0xD);
         Bitmap.Entry entry2 = new Bitmap.Entry(0, 0x3);
         entry1.union(entry2);
-        assertEquals(0xFL, entry1.bitMap);
+        assertEquals(0xFL, entry1.bitmap());
 
         entry1 = new Bitmap.Entry(0, 0x4);
         entry1.union(entry2);
-        assertEquals(0x7L, entry1.bitMap);
+        assertEquals(0x7L, entry1.bitmap());
 
     }
 
@@ -87,14 +87,14 @@ public class BitmapEntryTest {
         Bitmap.Entry entry1 = new Bitmap.Entry(0, 0xF);
         Bitmap.Entry entry2 = new Bitmap.Entry(0, 0x3);
         entry1.intersection(entry2);
-        assertEquals(0x3L, entry1.bitMap);
+        assertEquals(0x3L, entry1.bitmap());
 
         entry1 = new Bitmap.Entry(0, 0xD);
         entry1.intersection(entry2);
-        assertEquals(0x1L, entry1.bitMap);
+        assertEquals(0x1L, entry1.bitmap());
 
         entry1 = new Bitmap.Entry(0, 0x4);
         entry1.intersection(entry2);
-        assertEquals(0x0L, entry1.bitMap);
+        assertEquals(0x0L, entry1.bitmap());
     }
 }

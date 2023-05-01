@@ -1,17 +1,16 @@
 package org.xenei.rdfstore.jena;
 
-import java.util.function.Supplier;
+import static org.apache.jena.query.ReadWrite.WRITE;
 
 import org.apache.jena.graph.Node;
 import org.apache.jena.graph.TransactionHandler;
-import org.apache.jena.graph.impl.TransactionHandlerBase;
 import org.apache.jena.graph.Triple;
 import org.apache.jena.graph.impl.GraphBase;
-import org.apache.jena.graph.impl.SimpleTransactionHandler;
+import org.apache.jena.graph.impl.TransactionHandlerBase;
 import org.apache.jena.sparql.core.Quad;
 import org.apache.jena.util.iterator.ExtendedIterator;
+import org.xenei.rdfstore.mem.MemQuads;
 import org.xenei.rdfstore.store.Quads;
-import static org.apache.jena.query.ReadWrite.WRITE;
 
 public class Graph extends GraphBase {
 
@@ -19,7 +18,7 @@ public class Graph extends GraphBase {
     Node graphName;
 
     public Graph() {
-        this(new Quads());
+        this(new MemQuads());
     }
 
     public Graph(Quads quads) {
@@ -61,32 +60,32 @@ public class Graph extends GraphBase {
     public void performDelete(Triple t) {
         quads.delete(Quad.create(graphName, t));
     }
-    
+
     @Override
-    public TransactionHandler getTransactionHandler()
-    { return new TransactionHandlerBase() {
+    public TransactionHandler getTransactionHandler() {
+        return new TransactionHandlerBase() {
 
-        @Override
-        public boolean transactionsSupported() {
-            return true;
-        }
+            @Override
+            public boolean transactionsSupported() {
+                return true;
+            }
 
-        @Override
-        public void begin() {
-            quads.begin(WRITE);
-        }
+            @Override
+            public void begin() {
+                quads.begin(WRITE);
+            }
 
-        @Override
-        public void abort() {
-            quads.abort();
-        }
+            @Override
+            public void abort() {
+                quads.abort();
+            }
 
-        @Override
-        public void commit() {
-            quads.commit();
-        }
+            @Override
+            public void commit() {
+                quads.commit();
+            }
 
-         };
+        };
     }
 
 }

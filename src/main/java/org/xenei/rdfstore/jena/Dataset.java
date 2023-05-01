@@ -10,15 +10,20 @@ import org.apache.jena.riot.system.PrefixMap;
 import org.apache.jena.riot.system.PrefixMapStd;
 import org.apache.jena.sparql.core.DatasetGraphTriplesQuads;
 import org.apache.jena.sparql.core.Quad;
+import org.xenei.rdfstore.mem.MemQuads;
 import org.xenei.rdfstore.store.Idx;
 import org.xenei.rdfstore.store.Quads;
 
 public class Dataset extends DatasetGraphTriplesQuads {
     private Quads quads;
     private PrefixMap prefixes;
-    
+
     Dataset() {
-        quads = new Quads();
+        this(new MemQuads());
+    }
+
+    Dataset(Quads quads) {
+        this.quads = quads;
         prefixes = new PrefixMapStd();
     }
 

@@ -1,7 +1,7 @@
-package org.xenei.rdfstore.idx;
+package org.xenei.rdfstore.store;
 
 import org.apache.jena.sparql.core.mem.TransactionalComponent;
-import org.xenei.rdfstore.txn.TxnId;
+import org.xenei.rdfstore.txn.TxnIdHolder;
 
 /**
  * An index that associates bitmaps with items and enables the turning on or off
@@ -9,7 +9,7 @@ import org.xenei.rdfstore.txn.TxnId;
  * 
  * @param <T> the type of item in the index.
  */
-public interface Index<T> extends TransactionalComponent {
+public interface Index<T> extends TransactionalComponent, TxnIdHolder {
 
     default void checkIndex(long idx, long maxIndex) {
         if (idx < 0 || idx >= maxIndex) {
@@ -49,5 +49,4 @@ public interface Index<T> extends TransactionalComponent {
      * @return the number of items in this index.
      */
     long size();
-
 }

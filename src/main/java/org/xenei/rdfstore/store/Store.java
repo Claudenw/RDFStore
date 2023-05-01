@@ -1,10 +1,9 @@
-package org.xenei.rdfstore;
+package org.xenei.rdfstore.store;
 
 import java.util.Iterator;
 
 import org.apache.jena.sparql.core.mem.TransactionalComponent;
-import org.xenei.rdfstore.idx.Bitmap;
-import org.xenei.rdfstore.txn.TxnId;
+import org.xenei.rdfstore.txn.TxnIdHolder;
 
 /**
  * Generic store interface.
@@ -14,7 +13,7 @@ import org.xenei.rdfstore.txn.TxnId;
  *
  * @param <T> the object type to store
  */
-public interface Store<T> extends TransactionalComponent {
+public interface Store<T> extends TransactionalComponent, TxnIdHolder {
 
     /**
      * An result indicating no result.
@@ -47,7 +46,7 @@ public interface Store<T> extends TransactionalComponent {
      * @return The item or {@code null} if it does not exist.
      */
     T get(long idx);
-    
+
     /**
      * Gets the item from the store by index.
      * 

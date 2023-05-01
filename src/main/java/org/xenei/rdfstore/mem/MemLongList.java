@@ -1,18 +1,17 @@
-package org.xenei.rdfstore;
+package org.xenei.rdfstore.mem;
 
 import static org.apache.jena.query.ReadWrite.READ;
 import static org.apache.jena.query.ReadWrite.WRITE;
 
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.NavigableSet;
-import java.util.NoSuchElementException;
 import java.util.TreeSet;
 
 import org.apache.jena.query.ReadWrite;
-import org.apache.jena.sparql.core.mem.TransactionalComponent;
 import org.apache.jena.util.iterator.ExtendedIterator;
 import org.apache.jena.util.iterator.WrappedIterator;
+import org.xenei.rdfstore.store.IdxData;
+import org.xenei.rdfstore.store.LongList;
 import org.xenei.rdfstore.txn.TxnHandler;
 import org.xenei.rdfstore.txn.TxnId;
 
@@ -22,7 +21,7 @@ import org.xenei.rdfstore.txn.TxnId;
  * 
  * @param <T> the type to store.
  */
-public class LongList<T> implements TransactionalComponent {
+public class MemLongList<T> implements LongList<T> {
     public static final long MAX_ITEM_INDEX = (Integer.MAX_VALUE * (long) Integer.MAX_VALUE) - 1;
 
     private final TxnHandler txnHandler;
@@ -32,13 +31,15 @@ public class LongList<T> implements TransactionalComponent {
     /**
      * Creates a LongList.
      */
-    public LongList() {
+    public MemLongList() {
         this.pages = new ArrayList<NavigableSet<IdxData<T>>>();
         pages.add(new TreeSet<IdxData<T>>());
         this.itemCount = 0;
-        this.txnHandler = new TxnHandler(() -> "LongList", this::prepareBegin, this::execCommit, this::execAbort, this::execEnd);
+        this.txnHandler = new TxnHandler(() -> "LongList", this::prepareBegin, this::execCommit, this::execAbort,
+                this::execEnd);
     }
-    
+
+    @Override
     public void setTxnId(TxnId prefix) {
         txnHandler.setTxnId(prefix);
     }
@@ -113,6 +114,7 @@ public class LongList<T> implements TransactionalComponent {
      * 
      * @param data the item to add.
      */
+    @Override
     public IdxData<T> add(T data) {
         return txnHandler.doInTxn(WRITE, () -> {
             IdxData<T> idxData = new IdxData<>(txnCurrentItem++, data);
@@ -126,6 +128,7 @@ public class LongList<T> implements TransactionalComponent {
      * 
      * @return the size of the list.
      */
+    @Override
     public long size() {
         return txnHandler.doInTxn(ReadWrite.READ, () -> {
             return txnCurrentItem;
@@ -138,6 +141,7 @@ public class LongList<T> implements TransactionalComponent {
      * @param idx The index to set the item at
      * @param data the item to place into the list.
      */
+    @Override
     public void set(IdxData<T> data) {
         txnHandler.doInTxn(WRITE, () -> {
             txnPages.add(data);
@@ -150,13 +154,14 @@ public class LongList<T> implements TransactionalComponent {
      * @param idx the index to get the item from.
      * @return the item or {@code null} if no such item exists.
      */
+    @Override
     public T get(long idx) {
         return txnHandler.doInTxn(READ, () -> {
             IdxData<T> searcher = new IdxData<>(idx, null);
             IdxData<T> result = txnPages.floor(searcher);
             if (result == null || result.idx != idx) {
                 NavigableSet<IdxData<T>> page = pages.get(getPageNumber(idx));
-                result = page == null? null : page.floor(searcher);
+                result = page == null ? null : page.floor(searcher);
                 return result == null ? null : (result.idx == idx) ? result.data : null;
             }
             return result.data;
@@ -168,50 +173,14 @@ public class LongList<T> implements TransactionalComponent {
      * 
      * @param idx the index of the item to remove.
      */
+    @Override
     public void remove(long idx) {
         set(new IdxData<>(idx, null));
     }
 
+    @Override
     public ExtendedIterator<IdxData<T>> iterator() {
-        return WrappedIterator.create(new LongListIterator());
-    }
-
-    public class LongListIterator implements Iterator<IdxData<T>> {
-        IdxData<T> next = null;
-        Iterator<IdxData<T>> iterT = null;
-        Iterator<NavigableSet<IdxData<T>>> pageIter = WrappedIterator.create(pages.iterator());
-
-        @Override
-        public boolean hasNext() {
-            if (next == null) {
-                next = getNext();
-            }
-            return next != null;
-        }
-
-        private IdxData<T> getNext() {
-            if (iterT == null || !iterT.hasNext()) {
-                iterT = getIterT();
-            }
-            return iterT == null ? null : iterT.next();
-        }
-
-        private Iterator<IdxData<T>> getIterT() {
-            if (pageIter.hasNext()) {
-                return pageIter.next().iterator();
-            }
-            return null;
-        }
-
-        @Override
-        public IdxData<T> next() {
-            if (hasNext()) {
-                IdxData<T> result = next;
-                next = null;
-                return result;
-            }
-            throw new NoSuchElementException();
-        }
+        return WrappedIterator.create(new LongListIterator(pages.iterator()));
     }
 
     @Override

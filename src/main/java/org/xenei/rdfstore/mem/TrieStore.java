@@ -1,4 +1,4 @@
-package org.xenei.rdfstore;
+package org.xenei.rdfstore.mem;
 
 import static org.apache.jena.query.ReadWrite.READ;
 import static org.apache.jena.query.ReadWrite.WRITE;
@@ -13,7 +13,10 @@ import java.util.function.Function;
 import org.apache.commons.collections4.Trie;
 import org.apache.commons.collections4.trie.PatriciaTrie;
 import org.apache.jena.query.ReadWrite;
-import org.xenei.rdfstore.idx.Bitmap;
+import org.xenei.rdfstore.store.Bitmap;
+import org.xenei.rdfstore.store.IdxData;
+import org.xenei.rdfstore.store.LongList;
+import org.xenei.rdfstore.store.Store;
 import org.xenei.rdfstore.txn.TxnHandler;
 import org.xenei.rdfstore.txn.TxnId;
 
@@ -39,19 +42,19 @@ public class TrieStore<T> implements Store<T> {
      */
     public TrieStore(Function<T, String> keyFunc) {
         TxnId txnId = () -> "TrieStore";
-        lst = new LongList<T>();
+        lst = new MemLongList<T>();
         trie = new PatriciaTrie<IdxData<T>>();
-        deleted = new Bitmap();
+        deleted = new MemBitmap();
         this.keyFunc = keyFunc;
-        lst.setTxnId( txnId );
+        lst.setTxnId(txnId);
         txnHandler = new TxnHandler(txnId, this::prepareBegin, this::execCommit, this::execAbort, this::execEnd);
     }
-    
+
+    @Override
     public void setTxnId(TxnId prefix) {
         txnHandler.setTxnId(prefix);
         lst.setTxnId(prefix);
     }
-
 
     Map<String, IdxData<T>> txnAdd;
     Set<String> txnDel;
@@ -61,7 +64,7 @@ public class TrieStore<T> implements Store<T> {
         lst.begin(readWrite);
         txnAdd = new HashMap<>();
         txnDel = new HashSet<>();
-        txnUsed = new Bitmap();
+        txnUsed = new MemBitmap();
     }
 
     private void execCommit() {
@@ -99,19 +102,19 @@ public class TrieStore<T> implements Store<T> {
     @Override
     public Result register(T item) {
         String key = keyFunc.apply(item);
-        
+
         return txnHandler.doInTxn(READ, () -> {
-            
+
             long idx = get(item);
             if (idx > NO_INDEX) {
-                return new Result( true, idx );
+                return new Result(true, idx);
             }
             if (txnDel.contains(key)) {
                 txnDel.remove(key);
-                return new Result( false, idx );
+                return new Result(false, idx);
             }
             IdxData<T> entry = null;
-            Bitmap txnDeleted = Bitmap.xor(txnUsed, deleted);
+            Bitmap txnDeleted = Bitmap.xor(() -> new MemBitmap(), txnUsed, deleted);
             long deletedIdx = txnDeleted.lowest();
             if (deletedIdx == NO_INDEX) {
                 entry = lst.add(item);
@@ -174,11 +177,11 @@ public class TrieStore<T> implements Store<T> {
             return lst.get(idx);
         });
     }
-    
+
     @Override
     public long get(T item) {
         String key = keyFunc.apply(item);
-        return txnHandler.doInTxn(READ, () -> {           
+        return txnHandler.doInTxn(READ, () -> {
             if (txnDel.contains(key)) {
                 return NO_INDEX;
             }
@@ -186,7 +189,7 @@ public class TrieStore<T> implements Store<T> {
             if (entry == null) {
                 entry = trie.get(key);
             }
-            return entry == null? NO_INDEX : entry.idx;
+            return entry == null ? NO_INDEX : entry.idx;
         });
     }
 

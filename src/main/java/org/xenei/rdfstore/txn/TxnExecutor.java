@@ -24,22 +24,21 @@ public class TxnExecutor implements TxnId {
     private final ThreadLocal<ReadWrite> transactionMode = withInitial(() -> null);
 
     private TxnId txnId;
-    
+
     protected TxnExec finishTransaction = () -> {
         isInTransaction.remove();
         transactionMode.remove();
         transactionLock.leaveCriticalSection();
     };
 
-    public TxnExecutor(TxnId txnId)
-    {
+    public TxnExecutor(TxnId txnId) {
         this.txnId = txnId;
     }
-    
+
     public void setTxnId(TxnId prefix) {
         txnId = TxnId.setParent(prefix, txnId);
     }
-    
+
     @Override
     public String txnId() {
         return txnId.txnId();
@@ -49,16 +48,25 @@ public class TxnExecutor implements TxnId {
         return isInTransaction.get();
     }
 
+    protected void isInTransaction(boolean state) {
+        isInTransaction.set(state);
+    }
+
     public ReadWrite transactionMode() {
         return transactionMode.get();
     }
-    
-    protected void logState(String action, ReadWrite readWrite) {
-        System.out.println( String.format( "%s %s %s Txn:%s mode:%s",action, txnId.txnId(), readWrite, isInTransaction.get(), transactionMode.get()));
+
+    protected void transactionMode(ReadWrite mode) {
+        transactionMode.set(mode);
     }
-    
+
+    protected void logState(String action, ReadWrite readWrite) {
+        System.out.println(String.format("%s %s %s Txn:%s mode:%s", action, txnId.txnId(), readWrite,
+                isInTransaction.get(), transactionMode.get()));
+    }
+
     public void log(String str) {
-        System.out.println( String.format( "%s %s ", txnId.txnId(),  str ));
+        System.out.println(String.format("%s %s ", txnId.txnId(), str));
     }
 
     public void begin(ReadWrite readWrite, Consumer<ReadWrite> func) {
@@ -67,13 +75,13 @@ public class TxnExecutor implements TxnId {
             throw new JenaTransactionException("Transactions cannot be nested!");
         isInTransaction.set(true);
         transactionLock.enterCriticalSection(readWrite.equals(READ)); // get the dataset write lock, if
-                                                                                // needed.
+                                                                      // needed.
         transactionMode.set(readWrite);
         func.accept(readWrite);
     }
 
     public void commit(TxnExec commitF, TxnExec endF) {
-        logState("commit",null);
+        logState("commit", null);
         if (!isInTransaction.get())
             throw new JenaTransactionException("Tried to commit outside a transaction!");
         if (transactionMode().equals(WRITE)) {
@@ -83,8 +91,9 @@ public class TxnExecutor implements TxnId {
         }
         finishTransaction.run();
     }
+
     public void abort(TxnExec abortFunc, TxnExec endFunc) {
-        logState("abort",null);
+        logState("abort", null);
         if (!isInTransaction())
             throw new JenaTransactionException("Tried to abort outside a transaction!");
         if (transactionMode().equals(WRITE)) {
@@ -96,7 +105,7 @@ public class TxnExecutor implements TxnId {
     }
 
     public void end(TxnExec abortFunc, TxnExec endFunc) {
-        logState("end",null);
+        logState("end", null);
         if (isInTransaction()) {
             if (transactionMode().equals(WRITE)) {
                 String msg = "end() called for WRITE transaction without commit or abort having been called. This causes a forced abort.";
@@ -104,12 +113,12 @@ public class TxnExecutor implements TxnId {
                 abortFunc.run();
                 finishTransaction.run();
                 throw new JenaTransactionException(msg);
-            } 
+            }
             endFunc.run();
             finishTransaction.run();
         }
     }
-    
+
     private boolean startTxnIfNeeded(ReadWrite readWrite, Consumer<ReadWrite> beginF) {
         if (!isInTransaction()) {
             begin(readWrite, beginF);
@@ -119,8 +128,9 @@ public class TxnExecutor implements TxnId {
         }
         return false;
     }
-    
-    protected <T> T doInTxn( ReadWrite readWrite, Supplier<T> supplier, Consumer<ReadWrite> beginF, TxnExec commitF, TxnExec abortF, TxnExec endF ) {
+
+    protected <T> T doInTxn(ReadWrite readWrite, Supplier<T> supplier, Consumer<ReadWrite> beginF, TxnExec commitF,
+            TxnExec abortF, TxnExec endF) {
         boolean started = startTxnIfNeeded(readWrite, beginF);
         try {
             T result = supplier.get();
@@ -139,9 +149,13 @@ public class TxnExecutor implements TxnId {
             throw e;
         }
     }
-    
-    protected void doInTxn( ReadWrite readWrite, TxnExec exec, Consumer<ReadWrite> beginF, TxnExec commitF, TxnExec abortF, TxnExec endF ) {
-        doInTxn( readWrite, () -> { exec.run(); return null;}, beginF, commitF, abortF, endF);
+
+    protected void doInTxn(ReadWrite readWrite, TxnExec exec, Consumer<ReadWrite> beginF, TxnExec commitF,
+            TxnExec abortF, TxnExec endF) {
+        doInTxn(readWrite, () -> {
+            exec.run();
+            return null;
+        }, beginF, commitF, abortF, endF);
     }
 
     public void enterCriticalSection(boolean readLockRequested) {

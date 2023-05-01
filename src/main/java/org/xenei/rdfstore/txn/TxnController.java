@@ -64,9 +64,10 @@ public class TxnController extends TxnExecutor implements Transactional {
 
     @Override
     protected void logState(String action, ReadWrite readWrite) {
-        System.out.println( String.format( "%s %s %s Txn:%s mode:%s ver:%s gen:%s",action, txnId(), readWrite, isInTransaction(), transactionMode(), version.get(), generation.get()));
+        System.out.println(String.format("%s %s %s Txn:%s mode:%s ver:%s gen:%s", action, txnId(), readWrite,
+                isInTransaction(), transactionMode(), version.get(), generation.get()));
     }
-    
+
     private static void withLock(java.util.concurrent.locks.Lock lock, Runnable action) {
         lock.lock();
         try {
@@ -121,14 +122,10 @@ public class TxnController extends TxnExecutor implements Transactional {
         }
         // We have the writer lock and we have promoted!
 
-        Consumer<ReadWrite> wrapper = prepareBegin;
-        if (readCommited) {
-            wrapper = wrapper.andThen((rw) -> {
-                version.set(generation.get());
-            });
-        }
-
-        super.begin(ReadWrite.WRITE, wrapper);
+        isInTransaction(true);
+        transactionMode(ReadWrite.WRITE);
+        prepareBegin.accept(ReadWrite.WRITE);
+        version.set(generation.get());
     }
 
     private TxnExec execInLock(TxnExec func) {
@@ -137,15 +134,7 @@ public class TxnController extends TxnExecutor implements Transactional {
 
     @Override
     public void commit() {
-        super.commit(execInLock(commitF.andThen(() -> {
-            if (transactionMode().equals(WRITE)) {
-                if (version.get() != generation.get()) {
-                    throw new InternalErrorException(
-                            String.format("Version=%d, Generation=%d", version.get(), generation.get()));
-                }
-                generation.incrementAndGet();
-            }
-        })), endF);
+        super.commit(commitF, endF);
     }
 
     @Override
@@ -186,6 +175,7 @@ public class TxnController extends TxnExecutor implements Transactional {
             systemLock.lock();
             try {
                 inner.accept(arg0);
+                logState("after begin", arg0);
             } finally {
                 systemLock.unlock();
             }
