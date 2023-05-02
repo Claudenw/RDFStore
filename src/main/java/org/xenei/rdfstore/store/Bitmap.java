@@ -23,12 +23,12 @@ public interface Bitmap {
 
     public static final int PAGE_SIZE = Long.SIZE;
 
-    public static Comparator<Integer> UNSIGNED_COMPARATOR = new Comparator<Integer>() {
-        @Override
-        public int compare(Integer arg0, Integer arg1) {
-            return Integer.compareUnsigned(arg0, arg1);
-        }
-    };
+//    public static Comparator<Integer> UNSIGNED_COMPARATOR = new Comparator<Integer>() {
+//        @Override
+//        public int compare(Integer arg0, Integer arg1) {
+//            return Integer.compareUnsigned(arg0, arg1);
+//        }
+//    };
 
     /**
      * Calculates the union of the bitmap arguments. Creates a new bitmap instance.
@@ -39,7 +39,7 @@ public interface Bitmap {
     public static Bitmap union(Supplier<Bitmap> supplier, Bitmap... maps) {
         Bitmap result = supplier.get();
         for (Bitmap map : maps) {
-            Integer key = map.firstKey();
+            Key key = map.firstIndex();
             while (key != null) {
                 Entry rEntry = result.get(key);
                 if (rEntry == null) {
@@ -47,16 +47,16 @@ public interface Bitmap {
                 } else {
                     rEntry.union(map.get(key));
                 }
-                key = map.higherKey(key);
+                key = map.higherIndex(key);
             }
         }
         return result;
     }
 
-    public static void copyRemaining(Bitmap dest, Bitmap orig, Integer fromKey) {
+    public static void copyRemaining(Bitmap dest, Bitmap orig, Key fromKey) {
         while (fromKey != null) {
-            dest.put(fromKey, orig.get(fromKey).clone());
-            fromKey = orig.higherKey(fromKey);
+            dest.put(fromKey, orig.get(fromKey).duplicate());
+            fromKey = orig.higherIndex(fromKey);
         }
     }
 
@@ -67,32 +67,34 @@ public interface Bitmap {
             return result;
         }
         if (left == null && right != null) {
-            copyRemaining(result, right, right.isEmpty() ? null : right.firstKey());
+            copyRemaining(result, right, right.isEmpty() ? null : right.firstIndex());
             return result;
         }
         if (left != null && right == null) {
-            copyRemaining(result, left, left.isEmpty() ? null : left.firstKey());
+            copyRemaining(result, left, left.isEmpty() ? null : left.firstIndex());
             return result;
         }
-        Integer leftPage = left == null || left.isEmpty() ? null : left.firstKey();
-        Integer rightPage = right == null || right.isEmpty() ? null : right.firstKey();
+        Key leftPage = left == null || left.isEmpty() ? null : left.firstIndex();
+        Key rightPage = right == null || right.isEmpty() ? null : right.firstIndex();
         while (leftPage != null && rightPage != null) {
-            int i = Integer.compareUnsigned(leftPage, rightPage);
+            int i = leftPage.compareTo(rightPage);
             if (i < 0) {
-                result.put(leftPage, left.get(leftPage).clone());
-                leftPage = left.higherKey(leftPage);
+                result.put(leftPage, left.get(leftPage).duplicate());
+                leftPage = left.higherIndex(leftPage);
             } else if (i > 0) {
-                result.put(rightPage, right.get(rightPage).clone());
-                rightPage = right.higherKey(rightPage);
+                result.put(rightPage, right.get(rightPage).duplicate());
+                rightPage = right.higherIndex(rightPage);
             } else {
                 Entry leftEntry = left.get(leftPage);
                 Entry rightEntry = right.get(rightPage);
-                Entry newEntry = leftEntry.logical(rightEntry, xor);
-                if (!newEntry.isEmpty()) {
+                long newValue = leftEntry.logical(rightEntry.bitmap(), xor);
+                if (newValue != 0) {
+                    Entry newEntry = result.createEntry( leftPage );
+                    newEntry.mutate( newValue, or);
                     result.put(leftPage, newEntry);
                 }
-                leftPage = left.higherKey(leftPage);
-                rightPage = right.higherKey(rightPage);
+                leftPage = left.higherIndex(leftPage);
+                rightPage = right.higherIndex(rightPage);
             }
         }
         copyRemaining(result, left, leftPage);
@@ -119,22 +121,22 @@ public interface Bitmap {
             }
         }
 
-        Integer key = maps[0].firstKey();
+        Key key = maps[0].firstIndex();
         for (Bitmap map : maps) {
-            Integer testKey = map.firstKey();
-            if (key > testKey) {
+            Key testKey = map.firstIndex();
+            if (key.compareTo(testKey) > 0) {
                 key = testKey;
             }
         }
-        Integer nextKey = null;
+        Key nextKey = null;
         while (key != null) {
             Entry entry = maps[0].get(key);
             for (int i = 1; i < maps.length; i++) {
-                Integer testKey = maps[i].higherKey(key);
+                Key testKey = maps[i].higherIndex(key);
                 if (nextKey == null) {
                     nextKey = testKey;
                 } else if (testKey != null) {
-                    nextKey = nextKey > testKey ? testKey : nextKey;
+                    nextKey = nextKey.compareTo(testKey) > 0 ? testKey : nextKey;
                 }
                 Entry other = maps[i].get(key);
                 if (other == null) {
@@ -154,23 +156,34 @@ public interface Bitmap {
 
     long pageCount();
 
-    Integer firstKey();
+    /**
+     * gets the index for the first Entry in the collection.
+     * @return
+     */
+    Key firstIndex();
 
-    Integer higherKey(Integer key);
+    /**
+     * Returns the index for the next higher Entry 
+     * @param key
+     * @return
+     */
+    Key higherIndex(Key key);
 
-    Entry get(Integer key);
+    Entry get(Key key);
 
     Entry firstEntry();
 
     Entry lastEntry();
 
-    Iterator<Entry> entries();
+    Iterator<? extends Entry> entries();
 
-    void put(Integer key, Entry entry);
+    <T extends Entry> void put(Key key, T entry);
 
     void clear();
 
-    void remove(Integer key);
+    void remove(Key key);
+    
+    Entry createEntry( Key key);
 
     default void xor(Bitmap other) {
         if (other == null) {
@@ -179,24 +192,25 @@ public interface Bitmap {
         if (this == other) {
             this.clear();
         } else {
-            Integer thisPage = this.isEmpty() ? null : this.firstKey();
-            Integer otherPage = other.isEmpty() ? null : other.firstKey();
+            Key thisPage = this.isEmpty() ? null : this.firstIndex();
+            Key otherPage = other.isEmpty() ? null : other.firstIndex();
             while (thisPage != null && otherPage != null) {
-                int i = Integer.compareUnsigned(thisPage, otherPage);
+                
+                int i = thisPage.compareTo(otherPage);
                 if (i < 0) {
-                    thisPage = this.higherKey(thisPage);
+                    thisPage = this.higherIndex(thisPage);
                 } else if (i > 0) {
-                    this.put(otherPage, other.get(otherPage).clone());
-                    otherPage = other.higherKey(otherPage);
+                    this.put(otherPage, other.get(otherPage).duplicate());
+                    otherPage = other.higherIndex(otherPage);
                 } else {
                     Entry thisEntry = this.get(thisPage);
                     Entry otherEntry = other.get(otherPage);
-                    thisEntry.bitMap ^= otherEntry.bitMap;
+                    thisEntry.mutate( otherEntry.bitmap(), or );
                     if (thisEntry.isEmpty()) {
                         this.remove(thisPage);
                     }
-                    thisPage = this.higherKey(thisPage);
-                    otherPage = other.higherKey(otherPage);
+                    thisPage = this.higherIndex(thisPage);
+                    otherPage = other.higherIndex(otherPage);
                 }
             }
             copyRemaining(this, other, otherPage);
@@ -272,7 +286,7 @@ public interface Bitmap {
      */
     default boolean contains(final long bitIndex) {
         checkBitIndex(bitIndex);
-        Entry entry = get(Integer.valueOf((int) getLongIndex(bitIndex)));
+        Entry entry = get( new Key(getLongIndex(bitIndex)));
         return entry == null ? false : entry.contains(bitIndex);
     }
 
@@ -288,7 +302,7 @@ public interface Bitmap {
             return NO_INDEX;
         }
         Bitmap.Entry entry = firstEntry();
-        long idx = entry.bitMap;
+        long idx = entry.bitmap();
         int result = 0;
         while ((idx & 0x01L) == 0) {
             idx = idx >> 1;
@@ -297,7 +311,7 @@ public interface Bitmap {
                 throw new IllegalStateException("Bit count too large");
             }
         }
-        return Integer.toUnsignedLong(entry.index.intValue()) * PAGE_SIZE + result;
+        return entry.index().asUnsigned() * PAGE_SIZE + result;
     }
 
     /**
@@ -313,10 +327,10 @@ public interface Bitmap {
      */
     default void set(final long bitIndex) {
         checkBitIndex(bitIndex);
-        Integer entryIndex = Integer.valueOf((int) getLongIndex(bitIndex));
+        Key entryIndex = new Key( getLongIndex(bitIndex));
         Entry entry = get(entryIndex);
         if (entry == null) {
-            entry = new Entry(entryIndex);
+            entry = createEntry(entryIndex);
             put(entryIndex, entry);
         }
         entry.set(bitIndex);
@@ -335,7 +349,7 @@ public interface Bitmap {
      */
     default void clear(final long bitIndex) {
         checkBitIndex(bitIndex);
-        Integer entryIdx = Integer.valueOf((int) getLongIndex(bitIndex));
+        Key entryIdx = new Key( getLongIndex(bitIndex));
         Entry entry = get(entryIdx);
         if (entry != null) {
             entry.clear(bitIndex);
@@ -358,48 +372,49 @@ public interface Bitmap {
     public static final Logical and = (a, b) -> a & b;
     public static final Logical or = (a, b) -> a | b;
 
-    public static class Entry implements Comparable<Entry> {
-        // integer as an unsigned integer
-        private final Integer index;
-        private long bitMap;
+    public interface Entry extends Comparable<Entry> {
+   
+        /**
+         * Gets the bitmap for this entry.
+         * @return
+         */
+        long bitmap();
 
-        public Entry(Integer index) {
-            this(index, 0L);
-        }
+        /**
+         * Gets the position of this entry in the collection of entries.
+         * @return the position of this entry.
+         */
+        Key index();
 
-        public Entry(Integer index, long bitMap) {
-            this.index = index;
-            this.bitMap = bitMap;
-        }
-
-        public long bitmap() {
-            return bitMap;
-        }
-
-        public Integer index() {
-            return index;
-        }
+        /**
+         * Duplicates this entry.  Resulting entry has the same bitmap and index.
+         * @return
+         */
+        Entry duplicate();
 
         @Override
-        public Entry clone() {
-            return new Entry(index, bitMap);
-        }
-
-        @Override
-        public int compareTo(Entry arg0) {
-            return Integer.compareUnsigned(index, arg0.index);
-        }
-
-        public boolean contains(long bitIndex) {
-            return (this.bitMap & getLongBit(bitIndex)) != 0;
-        }
-
-        public void mutate(long other, Logical func) {
-            this.bitMap = func.apply(this.bitMap, other);
+        default int compareTo(Entry arg0) {
+            return index().compareTo(arg0.index());
         }
 
         /**
-         * Sets the bit in the bit maps.
+         * Returns {@code true} if the bit is set.
+         * @param bitIndex the bit to check
+         * @return {@code true} if the bit is set.
+         */
+        default boolean contains(long bitIndex) {
+            return (bitmap() & getLongBit(bitIndex)) != 0;
+        }
+
+        /**
+         * Mutate the bitmap by applying the other and hte logical function to the internal bitmap
+         * @param other the other bitmap
+         * @param func the function to apply
+         */
+        public void mutate(long other, Logical func);
+
+        /**
+         * Sets the bit in the bit map.
          * <p>
          * <em>Does not perform range checking</em>
          * </p>
@@ -409,7 +424,7 @@ public interface Bitmap {
          * @throws IndexOutOfBoundsException if bitIndex specifies a bit not in the
          * range being tracked.
          */
-        public void set(final long bitIndex) {
+        default void set(final long bitIndex) {
             mutate(getLongBit(bitIndex), or);
         }
 
@@ -424,12 +439,16 @@ public interface Bitmap {
          * @throws IndexOutOfBoundsException if bitIndex specifies a bit not in the
          * range being tracked.
          */
-        public void clear(final long bitIndex) {
+        default void clear(final long bitIndex) {
             mutate(~getLongBit(bitIndex), and);
         }
 
-        public boolean isEmpty() {
-            return this.bitMap == 0;
+        /**
+         * Returns {@code true} if the bitmap is empty.
+         * @return
+         */
+        default boolean isEmpty() {
+            return bitmap() == 0;
         }
 
         /**
@@ -437,18 +456,20 @@ public interface Bitmap {
          * 
          * @param entry
          */
-        public void union(final Entry entry) {
-            if (entry != null && this.compareTo(entry) == 0) {
-                mutate(entry.bitMap, or);
+        default void union(final Entry entry) {
+            if (entry != null && compareTo(entry) == 0) {
+                mutate(entry.bitmap(), or);
             }
         }
 
-        public long logical(long bitmap, Logical func) {
-            return func.apply(this.bitMap, bitmap);
-        }
-
-        public Entry logical(Entry other, Logical func) {
-            return new Entry(index, logical(other.bitMap, func));
+        /**
+         * Applies the function to this bitmap and the other bitmap and returnes the resulting bitmap.
+         * @param other
+         * @param func
+         * @return
+         */
+        default long logical(long other, Logical func) {
+            return func.apply(bitmap(), other);
         }
 
         /**
@@ -456,21 +477,21 @@ public interface Bitmap {
          * 
          * @param entry
          */
-        public void intersection(final Entry entry) {
+        default void intersection(final Entry entry) {
             if (entry == null) {
-                this.bitMap = 0L;
+                mutate( ~bitmap(), xor);
             } else if (this.compareTo(entry) == 0) {
-                mutate(entry.bitMap, and);
+                mutate(entry.bitmap(), and);
             }
         }
     }
 
     class Iter implements PrimitiveIterator.OfLong {
-        private Iterator<Entry> iterE;
+        private Iterator<? extends Entry> iterE;
         private Entry entry = null;
         private PrimitiveIterator.OfLong idxIter = null;
 
-        Iter(Iterator<Entry> iterE) {
+        Iter(Iterator<? extends Entry> iterE) {
             this.iterE = iterE;
         }
 
@@ -497,9 +518,9 @@ public interface Bitmap {
                     values = new int[0];
                     offset = 0;
                 } else {
-                    values = IndexProducer.fromBitMapProducer(BitMapProducer.fromBitMapArray(entry.bitMap))
+                    values = IndexProducer.fromBitMapProducer(BitMapProducer.fromBitMapArray(entry.bitmap()))
                             .asIndexArray();
-                    offset = Integer.toUnsignedLong(entry.index) * Long.SIZE;
+                    offset = entry.index().asUnsigned() * Long.SIZE;
                 }
                 pos = 0;
             }
@@ -525,6 +546,44 @@ public interface Bitmap {
         @Override
         public long nextLong() {
             return idxIter.nextLong();
+        }
+    }
+    
+    public class Key implements Comparable<Key> {
+        Integer value;
+        
+        public Key(int value) {
+            this.value = value;
+        }
+        
+        public Key(Integer value) {
+            this.value = value;
+        }
+
+        public Key(long value) {
+            this.value = (int) value;
+        }
+        
+        public long asUnsigned() {
+            return Integer.toUnsignedLong(value);
+        }
+        
+        public int asSigned() {
+            return value.intValue();
+        }
+        
+        @Override
+        public int compareTo(Key other) {
+            if (value == other.value) {
+                return 0;
+            }
+            if (value == null) {
+                return -1;
+            }
+            if (other.value == null) {
+                return 1;
+            }
+            return Integer.compareUnsigned(this.value, other.value);
         }
     }
 }

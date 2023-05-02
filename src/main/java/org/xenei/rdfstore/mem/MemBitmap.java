@@ -13,20 +13,20 @@ public class MemBitmap implements Bitmap {
     /**
      * A list of entries
      */
-    TreeMap<Integer, Entry> entries = new TreeMap<Integer, Entry>(UNSIGNED_COMPARATOR);
+    TreeMap<Key, Entry> entries = new TreeMap<Key, Entry>();
 
     @Override
-    public Integer firstKey() {
+    public Key firstIndex() {
         return entries.firstKey();
     }
 
     @Override
-    public Integer higherKey(Integer key) {
+    public Key higherIndex(Key key) {
         return entries.higherKey(key);
     }
 
     @Override
-    public Entry get(Integer key) {
+    public Entry get(Key key) {
         return entries.get(key);
     }
 
@@ -36,13 +36,16 @@ public class MemBitmap implements Bitmap {
     }
 
     @Override
-    public Iterator<Entry> entries() {
+    public Iterator<? extends Bitmap.Entry> entries() {
         return entries.values().iterator();
+        // return WrappedIterator.create(entries.values().iterator()).mapWith( e ->
+        // (Bitmap.Entry)e);
     }
 
     @Override
-    public void put(Integer key, Entry entry) {
-        entries.put(key, entry);
+    public <T extends Bitmap.Entry> void put(Key key, T entry) {
+        Entry myEntry = (entry instanceof Entry) ? (Entry) entry : new Entry(entry.index(), entry.bitmap());
+        entries.put(key, myEntry);
     }
 
     @Override
@@ -51,7 +54,7 @@ public class MemBitmap implements Bitmap {
     }
 
     @Override
-    public void remove(Integer key) {
+    public void remove(Key key) {
         entries.remove(key);
     }
 
@@ -69,4 +72,45 @@ public class MemBitmap implements Bitmap {
     public Entry lastEntry() {
         return entries.lastEntry().getValue();
     }
+
+    @Override
+    public Entry createEntry(Key key) {
+        return new Entry(key);
+    }
+
+    public static class Entry implements Bitmap.Entry {
+        // integer as an unsigned integer
+        private final Key key;
+        private long bitMap;
+
+        public Entry(Key key) {
+            this(key, 0L);
+        }
+
+        public Entry(Key key, long bitMap) {
+            this.key = key;
+            this.bitMap = bitMap;
+        }
+
+        @Override
+        public long bitmap() {
+            return bitMap;
+        }
+
+        @Override
+        public Key index() {
+            return key;
+        }
+
+        @Override
+        public Entry duplicate() {
+            return new Entry(key, bitMap);
+        }
+
+        @Override
+        public void mutate(long other, Logical func) {
+            this.bitMap = func.apply(this.bitMap, other);
+        }
+    }
+
 }

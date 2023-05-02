@@ -138,7 +138,7 @@ public class MemLongList<T> implements LongList<T> {
     /**
      * Sets an item at the specified index.
      * 
-     * @param idx The index to set the item at
+     * @param key The index to set the item at
      * @param data the item to place into the list.
      */
     @Override

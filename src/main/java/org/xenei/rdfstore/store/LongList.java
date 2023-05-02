@@ -7,6 +7,7 @@ import java.util.Set;
 import org.apache.jena.sparql.core.mem.TransactionalComponent;
 import org.apache.jena.util.iterator.ExtendedIterator;
 import org.xenei.rdfstore.txn.TxnId;
+import org.xenei.rdfstore.txn.TxnIdHolder;
 
 /**
  * An implementation of a list like structure that can hold up to Long.MAX_VALUE
@@ -14,10 +15,9 @@ import org.xenei.rdfstore.txn.TxnId;
  * 
  * @param <T> the type to store.
  */
-public interface LongList<T> extends TransactionalComponent {
+public interface LongList<T> extends TransactionalComponent, TxnIdHolder {
 
-    public void setTxnId(TxnId prefix);
-
+    
     /**
      * Adds the data item to the list.
      * 
