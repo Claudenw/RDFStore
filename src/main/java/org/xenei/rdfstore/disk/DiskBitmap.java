@@ -121,7 +121,7 @@ public class DiskBitmap implements Bitmap {
             return null;
         }
         PageData pageData = getPage(key);
-        return pageData.get(key);
+        return pageData == null ? null : pageData.get(key);
     }
 
     @Override
@@ -140,11 +140,11 @@ public class DiskBitmap implements Bitmap {
     }
 
     @Override
-    public void put(Key key, Bitmap.Entry entry) {
+    public Entry put(Key key, Bitmap.Entry entry) {
         if (key == null) {
-            throw new IllegalArgumentException( "key must not be null");
+            throw new IllegalArgumentException("key must not be null");
         }
-        getPage(pageNumber(key), this::createPageOnDisk).put(key, entry);
+        return getPage(pageNumber(key), this::createPageOnDisk).put(key, entry);
 
     }
 
@@ -158,8 +158,7 @@ public class DiskBitmap implements Bitmap {
 
     @Override
     public void remove(Key key) {
-        if (key != null)
-        {
+        if (key != null) {
             getPage(key).remove(key);
         }
     }
@@ -302,7 +301,7 @@ public class DiskBitmap implements Bitmap {
         private int pagePosition(Key key) {
             long pagePos = key.asUnsigned() - pageOffset();
             if (pagePos < 0 || pagePos > PAGE_BITMAP_COUNT) {
-                throw new IllegalArgumentException(String.format("Key %s not in range [%s,%s)", key,
+                throw new IllegalArgumentException(String.format("%s not in range [%s,%s)", key,
                         (PAGE_BITMAP_COUNT * pageNumber), (PAGE_BITMAP_COUNT * (pageNumber + 1))));
             }
             return (int) pagePos;
@@ -346,10 +345,11 @@ public class DiskBitmap implements Bitmap {
             return new Entry(key, buffer, pagePos);
         }
 
-        void put(Key key, Bitmap.Entry entry) {
+        Entry put(Key key, Bitmap.Entry entry) {
             int pagePos = pagePosition(key);
             buffer.put(pagePos, entry.bitmap());
             BufferBitMap.set(index, pagePos);
+            return new Entry(key, buffer, pagePos);
         }
 
         void remove(Key key) {

@@ -1,20 +1,5 @@
 package org.xenei.rdfstore.disk;
 
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.nio.ByteBuffer;
-
-import org.apache.jena.query.ReadWrite;
-import org.apache.jena.util.iterator.ExtendedIterator;
-import org.xenei.rdfstore.store.IdxData;
-import org.xenei.rdfstore.store.LongList;
-import org.xenei.rdfstore.txn.TxnHandler;
-import org.xenei.rdfstore.txn.TxnId;
-
-import static org.apache.jena.query.ReadWrite.READ;
-import static org.apache.jena.query.ReadWrite.WRITE;
-
 /*
 public class DiskLongList<T> implements LongList<T> {
     private final Serde<T> serde;

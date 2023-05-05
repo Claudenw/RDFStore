@@ -6,7 +6,6 @@ import java.util.Set;
 
 import org.apache.jena.sparql.core.mem.TransactionalComponent;
 import org.apache.jena.util.iterator.ExtendedIterator;
-import org.xenei.rdfstore.txn.TxnId;
 import org.xenei.rdfstore.txn.TxnIdHolder;
 
 /**
@@ -17,7 +16,6 @@ import org.xenei.rdfstore.txn.TxnIdHolder;
  */
 public interface LongList<T> extends TransactionalComponent, TxnIdHolder {
 
-    
     /**
      * Adds the data item to the list.
      * 

@@ -1,6 +1,5 @@
 package org.xenei.rdfstore.store;
 
-import java.util.Comparator;
 import java.util.Iterator;
 import java.util.PrimitiveIterator;
 import java.util.function.Supplier;
@@ -89,8 +88,8 @@ public interface Bitmap {
                 Entry rightEntry = right.get(rightkey);
                 long newValue = leftEntry.logical(rightEntry.bitmap(), xor);
                 if (newValue != 0) {
-                    Entry newEntry = new DefaultEntry( leftKey );
-                    newEntry.mutate( newValue, or);
+                    Entry newEntry = new DefaultEntry(leftKey);
+                    newEntry.mutate(newValue, or);
                     result.put(leftKey, newEntry);
                 }
                 leftKey = left.higherIndex(leftKey);
@@ -158,12 +157,14 @@ public interface Bitmap {
 
     /**
      * gets the index for the first Entry in the collection.
+     * 
      * @return
      */
     Key firstIndex();
 
     /**
-     * Returns the index for the next higher Entry 
+     * Returns the index for the next higher Entry
+     * 
      * @param key
      * @return
      */
@@ -177,7 +178,7 @@ public interface Bitmap {
 
     Iterator<? extends Entry> entries();
 
-    <T extends Entry> void put(Key key, T entry);
+    <T extends Entry> T put(Key key, Entry entry);
 
     void clear();
 
@@ -193,7 +194,7 @@ public interface Bitmap {
             Key thisKey = this.isEmpty() ? null : this.firstIndex();
             Key otherKey = other.isEmpty() ? null : other.firstIndex();
             while (thisKey != null && otherKey != null) {
-                
+
                 int i = thisKey.compareTo(otherKey);
                 if (i < 0) {
                     thisKey = this.higherIndex(thisKey);
@@ -203,7 +204,7 @@ public interface Bitmap {
                 } else {
                     Entry thisEntry = this.get(thisKey);
                     Entry otherEntry = other.get(otherKey);
-                    thisEntry.mutate( otherEntry.bitmap(), or );
+                    thisEntry.mutate(otherEntry.bitmap(), or);
                     if (thisEntry.isEmpty()) {
                         this.remove(thisKey);
                     }
@@ -284,7 +285,7 @@ public interface Bitmap {
      */
     default boolean contains(final long bitIndex) {
         checkBitIndex(bitIndex);
-        Entry entry = get( new Key(getLongIndex(bitIndex)));
+        Entry entry = get(new Key(getLongIndex(bitIndex)));
         return entry == null ? false : entry.contains(bitIndex);
     }
 
@@ -325,11 +326,10 @@ public interface Bitmap {
      */
     default void set(final long bitIndex) {
         checkBitIndex(bitIndex);
-        Key entryIndex = new Key( getLongIndex(bitIndex));
-        Entry entry = get(entryIndex);
+        Key key = new Key(getLongIndex(bitIndex));
+        Entry entry = get(key);
         if (entry == null) {
-            entry = new DefaultEntry(entryIndex);
-            put(entryIndex, entry);
+            entry = put(key, new DefaultEntry(key));
         }
         entry.set(bitIndex);
     }
@@ -347,7 +347,7 @@ public interface Bitmap {
      */
     default void clear(final long bitIndex) {
         checkBitIndex(bitIndex);
-        Key entryIdx = new Key( getLongIndex(bitIndex));
+        Key entryIdx = new Key(getLongIndex(bitIndex));
         Entry entry = get(entryIdx);
         if (entry != null) {
             entry.clear(bitIndex);
@@ -371,21 +371,24 @@ public interface Bitmap {
     public static final Logical or = (a, b) -> a | b;
 
     public interface Entry extends Comparable<Entry> {
-   
+
         /**
          * Gets the bitmap for this entry.
+         * 
          * @return
          */
         long bitmap();
 
         /**
          * Gets the position of this entry in the collection of entries.
+         * 
          * @return the position of this entry.
          */
         Key index();
 
         /**
-         * Duplicates this entry.  Resulting entry has the same bitmap and index.
+         * Duplicates this entry. Resulting entry has the same bitmap and index.
+         * 
          * @return
          */
         Entry duplicate();
@@ -397,6 +400,7 @@ public interface Bitmap {
 
         /**
          * Returns {@code true} if the bit is set.
+         * 
          * @param bitIndex the bit to check
          * @return {@code true} if the bit is set.
          */
@@ -405,7 +409,9 @@ public interface Bitmap {
         }
 
         /**
-         * Mutate the bitmap by applying the other and hte logical function to the internal bitmap
+         * Mutate the bitmap by applying the other and hte logical function to the
+         * internal bitmap
+         * 
          * @param other the other bitmap
          * @param func the function to apply
          */
@@ -443,6 +449,7 @@ public interface Bitmap {
 
         /**
          * Returns {@code true} if the bitmap is empty.
+         * 
          * @return
          */
         default boolean isEmpty() {
@@ -461,7 +468,9 @@ public interface Bitmap {
         }
 
         /**
-         * Applies the function to this bitmap and the other bitmap and returnes the resulting bitmap.
+         * Applies the function to this bitmap and the other bitmap and returnes the
+         * resulting bitmap.
+         * 
          * @param other
          * @param func
          * @return
@@ -477,7 +486,7 @@ public interface Bitmap {
          */
         default void intersection(final Entry entry) {
             if (entry == null) {
-                mutate( ~bitmap(), xor);
+                mutate(~bitmap(), xor);
             } else if (this.compareTo(entry) == 0) {
                 mutate(entry.bitmap(), and);
             }
@@ -546,14 +555,14 @@ public interface Bitmap {
             return idxIter.nextLong();
         }
     }
-    
+
     public class Key implements Comparable<Key> {
-        Integer value;
-        
+        private Integer value;
+
         public Key(int value) {
             this.value = value;
         }
-        
+
         public Key(Integer value) {
             this.value = value;
         }
@@ -561,15 +570,15 @@ public interface Bitmap {
         public Key(long value) {
             this.value = (int) value;
         }
-        
+
         public long asUnsigned() {
             return Integer.toUnsignedLong(value);
         }
-        
+
         public int asSigned() {
             return value.intValue();
         }
-        
+
         @Override
         public int compareTo(Key other) {
             if (value == other.value) {
@@ -583,37 +592,42 @@ public interface Bitmap {
             }
             return Integer.compareUnsigned(this.value, other.value);
         }
+
+        @Override
+        public String toString() {
+            return String.format("Key[%s]", asUnsigned());
+        }
     }
 
-    class DefaultEntry implements Entry {
+    class DefaultEntry implements Bitmap.Entry {
         // integer as an unsigned integer
         private final Key key;
         private long bitMap;
-    
+
         public DefaultEntry(Key key) {
             this(key, 0L);
         }
-    
+
         public DefaultEntry(Key key, long bitMap) {
             this.key = key;
             this.bitMap = bitMap;
         }
-    
+
         @Override
         public long bitmap() {
             return bitMap;
         }
-    
+
         @Override
         public Key index() {
             return key;
         }
-    
+
         @Override
         public DefaultEntry duplicate() {
             return new DefaultEntry(key, bitMap);
         }
-    
+
         @Override
         public void mutate(long other, Logical func) {
             this.bitMap = func.apply(this.bitMap, other);

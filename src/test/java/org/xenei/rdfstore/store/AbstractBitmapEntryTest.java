@@ -11,10 +11,10 @@ public abstract class AbstractBitmapEntryTest {
     private Key key0 = new Key(0);
     private Key key1 = new Key(1);
     private Key key2 = new Key(2);
-    
+
     abstract protected Bitmap.Entry create(Key key);
+
     abstract protected Bitmap.Entry create(Key key, long bitmap);
-    
 
     @Test
     public void compareToTest() {

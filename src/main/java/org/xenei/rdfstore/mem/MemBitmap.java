@@ -43,9 +43,10 @@ public class MemBitmap implements Bitmap {
     }
 
     @Override
-    public <T extends Bitmap.Entry> void put(Key key, T entry) {
-        Bitmap.DefaultEntry myEntry = (entry instanceof Bitmap.DefaultEntry) ? (Bitmap.DefaultEntry) entry : new Bitmap.DefaultEntry(entry.index(), entry.bitmap());
-        entries.put(key, myEntry);
+    public Entry put(Key key, Entry entry) {
+        Bitmap.DefaultEntry myEntry = (entry instanceof Bitmap.DefaultEntry) ? (Bitmap.DefaultEntry) entry
+                : new Bitmap.DefaultEntry(entry.index(), entry.bitmap());
+        return entries.put(key, myEntry);
     }
 
     @Override
