@@ -13,7 +13,7 @@ public class MemBitmap implements Bitmap {
     /**
      * A list of entries
      */
-    TreeMap<Key, Entry> entries = new TreeMap<Key, Entry>();
+    TreeMap<Key, Bitmap.DefaultEntry> entries = new TreeMap<Key, Bitmap.DefaultEntry>();
 
     @Override
     public Key firstIndex() {
@@ -26,12 +26,12 @@ public class MemBitmap implements Bitmap {
     }
 
     @Override
-    public Entry get(Key key) {
+    public Bitmap.DefaultEntry get(Key key) {
         return entries.get(key);
     }
 
     @Override
-    public Entry firstEntry() {
+    public Bitmap.DefaultEntry firstEntry() {
         return entries.firstEntry().getValue();
     }
 
@@ -44,7 +44,7 @@ public class MemBitmap implements Bitmap {
 
     @Override
     public <T extends Bitmap.Entry> void put(Key key, T entry) {
-        Entry myEntry = (entry instanceof Entry) ? (Entry) entry : new Entry(entry.index(), entry.bitmap());
+        Bitmap.DefaultEntry myEntry = (entry instanceof Bitmap.DefaultEntry) ? (Bitmap.DefaultEntry) entry : new Bitmap.DefaultEntry(entry.index(), entry.bitmap());
         entries.put(key, myEntry);
     }
 
@@ -69,48 +69,7 @@ public class MemBitmap implements Bitmap {
     }
 
     @Override
-    public Entry lastEntry() {
+    public Bitmap.DefaultEntry lastEntry() {
         return entries.lastEntry().getValue();
     }
-
-    @Override
-    public Entry createEntry(Key key) {
-        return new Entry(key);
-    }
-
-    public static class Entry implements Bitmap.Entry {
-        // integer as an unsigned integer
-        private final Key key;
-        private long bitMap;
-
-        public Entry(Key key) {
-            this(key, 0L);
-        }
-
-        public Entry(Key key, long bitMap) {
-            this.key = key;
-            this.bitMap = bitMap;
-        }
-
-        @Override
-        public long bitmap() {
-            return bitMap;
-        }
-
-        @Override
-        public Key index() {
-            return key;
-        }
-
-        @Override
-        public Entry duplicate() {
-            return new Entry(key, bitMap);
-        }
-
-        @Override
-        public void mutate(long other, Logical func) {
-            this.bitMap = func.apply(this.bitMap, other);
-        }
-    }
-
 }

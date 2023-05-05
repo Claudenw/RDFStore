@@ -74,31 +74,31 @@ public interface Bitmap {
             copyRemaining(result, left, left.isEmpty() ? null : left.firstIndex());
             return result;
         }
-        Key leftPage = left == null || left.isEmpty() ? null : left.firstIndex();
-        Key rightPage = right == null || right.isEmpty() ? null : right.firstIndex();
-        while (leftPage != null && rightPage != null) {
-            int i = leftPage.compareTo(rightPage);
+        Key leftKey = left == null || left.isEmpty() ? null : left.firstIndex();
+        Key rightkey = right == null || right.isEmpty() ? null : right.firstIndex();
+        while (leftKey != null && rightkey != null) {
+            int i = leftKey.compareTo(rightkey);
             if (i < 0) {
-                result.put(leftPage, left.get(leftPage).duplicate());
-                leftPage = left.higherIndex(leftPage);
+                result.put(leftKey, left.get(leftKey).duplicate());
+                leftKey = left.higherIndex(leftKey);
             } else if (i > 0) {
-                result.put(rightPage, right.get(rightPage).duplicate());
-                rightPage = right.higherIndex(rightPage);
+                result.put(rightkey, right.get(rightkey).duplicate());
+                rightkey = right.higherIndex(rightkey);
             } else {
-                Entry leftEntry = left.get(leftPage);
-                Entry rightEntry = right.get(rightPage);
+                Entry leftEntry = left.get(leftKey);
+                Entry rightEntry = right.get(rightkey);
                 long newValue = leftEntry.logical(rightEntry.bitmap(), xor);
                 if (newValue != 0) {
-                    Entry newEntry = result.createEntry( leftPage );
+                    Entry newEntry = new DefaultEntry( leftKey );
                     newEntry.mutate( newValue, or);
-                    result.put(leftPage, newEntry);
+                    result.put(leftKey, newEntry);
                 }
-                leftPage = left.higherIndex(leftPage);
-                rightPage = right.higherIndex(rightPage);
+                leftKey = left.higherIndex(leftKey);
+                rightkey = right.higherIndex(rightkey);
             }
         }
-        copyRemaining(result, left, leftPage);
-        copyRemaining(result, right, rightPage);
+        copyRemaining(result, left, leftKey);
+        copyRemaining(result, right, rightkey);
 
         return result;
     }
@@ -182,8 +182,6 @@ public interface Bitmap {
     void clear();
 
     void remove(Key key);
-    
-    Entry createEntry( Key key);
 
     default void xor(Bitmap other) {
         if (other == null) {
@@ -192,28 +190,28 @@ public interface Bitmap {
         if (this == other) {
             this.clear();
         } else {
-            Key thisPage = this.isEmpty() ? null : this.firstIndex();
-            Key otherPage = other.isEmpty() ? null : other.firstIndex();
-            while (thisPage != null && otherPage != null) {
+            Key thisKey = this.isEmpty() ? null : this.firstIndex();
+            Key otherKey = other.isEmpty() ? null : other.firstIndex();
+            while (thisKey != null && otherKey != null) {
                 
-                int i = thisPage.compareTo(otherPage);
+                int i = thisKey.compareTo(otherKey);
                 if (i < 0) {
-                    thisPage = this.higherIndex(thisPage);
+                    thisKey = this.higherIndex(thisKey);
                 } else if (i > 0) {
-                    this.put(otherPage, other.get(otherPage).duplicate());
-                    otherPage = other.higherIndex(otherPage);
+                    this.put(otherKey, other.get(otherKey).duplicate());
+                    otherKey = other.higherIndex(otherKey);
                 } else {
-                    Entry thisEntry = this.get(thisPage);
-                    Entry otherEntry = other.get(otherPage);
+                    Entry thisEntry = this.get(thisKey);
+                    Entry otherEntry = other.get(otherKey);
                     thisEntry.mutate( otherEntry.bitmap(), or );
                     if (thisEntry.isEmpty()) {
-                        this.remove(thisPage);
+                        this.remove(thisKey);
                     }
-                    thisPage = this.higherIndex(thisPage);
-                    otherPage = other.higherIndex(otherPage);
+                    thisKey = this.higherIndex(thisKey);
+                    otherKey = other.higherIndex(otherKey);
                 }
             }
-            copyRemaining(this, other, otherPage);
+            copyRemaining(this, other, otherKey);
         }
     }
 
@@ -330,7 +328,7 @@ public interface Bitmap {
         Key entryIndex = new Key( getLongIndex(bitIndex));
         Entry entry = get(entryIndex);
         if (entry == null) {
-            entry = createEntry(entryIndex);
+            entry = new DefaultEntry(entryIndex);
             put(entryIndex, entry);
         }
         entry.set(bitIndex);
@@ -584,6 +582,41 @@ public interface Bitmap {
                 return 1;
             }
             return Integer.compareUnsigned(this.value, other.value);
+        }
+    }
+
+    class DefaultEntry implements Entry {
+        // integer as an unsigned integer
+        private final Key key;
+        private long bitMap;
+    
+        public DefaultEntry(Key key) {
+            this(key, 0L);
+        }
+    
+        public DefaultEntry(Key key, long bitMap) {
+            this.key = key;
+            this.bitMap = bitMap;
+        }
+    
+        @Override
+        public long bitmap() {
+            return bitMap;
+        }
+    
+        @Override
+        public Key index() {
+            return key;
+        }
+    
+        @Override
+        public DefaultEntry duplicate() {
+            return new DefaultEntry(key, bitMap);
+        }
+    
+        @Override
+        public void mutate(long other, Logical func) {
+            this.bitMap = func.apply(this.bitMap, other);
         }
     }
 }
