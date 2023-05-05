@@ -560,10 +560,10 @@ public class DiskBitmap implements Bitmap {
         }
     }
 
-    public class Entry implements Bitmap.Entry {
-        LongBuffer bitmap;
-        Key key;
-        int offset;
+    public static class Entry implements Bitmap.Entry {
+        private LongBuffer bitmap;
+        private Key key;
+        private int offset;
 
         public Entry(Key key, LongBuffer bitmap, int offset) {
             this.bitmap = bitmap;
@@ -582,7 +582,7 @@ public class DiskBitmap implements Bitmap {
         }
 
         @Override
-        public Entry duplicate() {
+        public Bitmap.Entry duplicate() {
             return new Bitmap.DefaultEntry(key, bitmap());
         }
 

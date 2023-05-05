@@ -15,7 +15,7 @@ import org.xenei.rdfstore.txn.TxnId;
 import static org.apache.jena.query.ReadWrite.READ;
 import static org.apache.jena.query.ReadWrite.WRITE;
 
-
+/*
 public class DiskLongList<T> implements LongList<T> {
     private final Serde<T> serde;
     private final TxnHandler txnHandler;
@@ -120,3 +120,4 @@ public class DiskLongList<T> implements LongList<T> {
     
 
 }
+*/

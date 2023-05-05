@@ -122,13 +122,13 @@ public abstract class AbstractBitmapTest {
         bitmap.set(FIRST_INDEX_ON_LAST_PAGE);
         assertEquals(3, bitmap.pageCount());
         mapEntry = bitmap.lastEntry();
-        assertEquals(Bitmap.MAX_UNSIGNED_INT, Integer.toUnsignedLong(mapEntry.index()));
+        assertEquals(Bitmap.MAX_UNSIGNED_INT, mapEntry.index().asUnsigned());
         assertEquals(0x1L, mapEntry.bitmap());
 
         bitmap.set(Bitmap.MAX_INDEX);
         assertEquals(3, bitmap.pageCount());
         mapEntry = bitmap.lastEntry();
-        assertEquals(Bitmap.MAX_UNSIGNED_INT, Integer.toUnsignedLong(mapEntry.index()));
+        assertEquals(Bitmap.MAX_UNSIGNED_INT, mapEntry.index().asUnsigned());
         assertEquals(0x8000000000000001L, mapEntry.bitmap());
 
         assertThrows(AssertionError.class, () -> bitmap.set(Bitmap.MAX_INDEX + 1));
