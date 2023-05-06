@@ -10,7 +10,7 @@ import org.apache.commons.collections4.bloomfilter.IndexProducer;
 /**
  * Class to handle a large number of bitmaps.
  */
-public interface Bitmap {
+public interface Bitmap extends AutoCloseable {
     public static final long MAX_UNSIGNED_INT = 0xFFFF_FFFFL;
 
     public static final long MAX_INDEX = Long.SIZE * MAX_UNSIGNED_INT + 63;
@@ -20,15 +20,13 @@ public interface Bitmap {
     /** A bit shift to apply to an integer to divided by 64 (2^6). */
     public static final int DIVIDE_BY_64 = 6;
 
-    public static final int PAGE_SIZE = Long.SIZE;
-
-//    public static Comparator<Integer> UNSIGNED_COMPARATOR = new Comparator<Integer>() {
-//        @Override
-//        public int compare(Integer arg0, Integer arg1) {
-//            return Integer.compareUnsigned(arg0, arg1);
-//        }
-//    };
-
+    /**
+     * The size of a page in bits
+     * @return the size of a page in bits.
+     */
+    default int pageSize() {
+        return Long.SIZE;
+    }
     /**
      * Calculates the union of the bitmap arguments. Creates a new bitmap instance.
      * 
@@ -178,7 +176,7 @@ public interface Bitmap {
 
     Iterator<? extends Entry> entries();
 
-    <T extends Entry> T put(Key key, Entry entry);
+    Entry put(Key key, Entry entry);
 
     void clear();
 
@@ -204,7 +202,7 @@ public interface Bitmap {
                 } else {
                     Entry thisEntry = this.get(thisKey);
                     Entry otherEntry = other.get(otherKey);
-                    thisEntry.mutate(otherEntry.bitmap(), or);
+                    thisEntry.mutate(otherEntry.bitmap(), xor);
                     if (thisEntry.isEmpty()) {
                         this.remove(thisKey);
                     }
@@ -306,11 +304,11 @@ public interface Bitmap {
         while ((idx & 0x01L) == 0) {
             idx = idx >> 1;
             result++;
-            if (result > PAGE_SIZE) {
+            if (result > Long.SIZE) {
                 throw new IllegalStateException("Bit count too large");
             }
         }
-        return entry.index().asUnsigned() * PAGE_SIZE + result;
+        return entry.key().asUnsigned() * Long.SIZE + result;
     }
 
     /**
@@ -384,7 +382,7 @@ public interface Bitmap {
          * 
          * @return the position of this entry.
          */
-        Key index();
+        Key key();
 
         /**
          * Duplicates this entry. Resulting entry has the same bitmap and index.
@@ -395,7 +393,7 @@ public interface Bitmap {
 
         @Override
         default int compareTo(Entry arg0) {
-            return index().compareTo(arg0.index());
+            return key().compareTo(arg0.key());
         }
 
         /**
@@ -527,7 +525,7 @@ public interface Bitmap {
                 } else {
                     values = IndexProducer.fromBitMapProducer(BitMapProducer.fromBitMapArray(entry.bitmap()))
                             .asIndexArray();
-                    offset = entry.index().asUnsigned() * Long.SIZE;
+                    offset = entry.key().asUnsigned() * Long.SIZE;
                 }
                 pos = 0;
             }
@@ -592,7 +590,22 @@ public interface Bitmap {
             }
             return Integer.compareUnsigned(this.value, other.value);
         }
+        
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o instanceof Key) {
+                return asUnsigned() == ((Key)o).asUnsigned();
+            }
+            return false;
+        }
 
+        @Override
+        public int hashCode() {
+            return Long.hashCode(asUnsigned());
+        }
         @Override
         public String toString() {
             return String.format("Key[%s]", asUnsigned());
@@ -619,7 +632,7 @@ public interface Bitmap {
         }
 
         @Override
-        public Key index() {
+        public Key key() {
             return key;
         }
 

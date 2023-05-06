@@ -16,6 +16,10 @@ public class MemBitmap implements Bitmap {
     TreeMap<Key, Bitmap.DefaultEntry> entries = new TreeMap<Key, Bitmap.DefaultEntry>();
 
     @Override
+    public void close() {
+        entries = null;
+    }
+    @Override
     public Key firstIndex() {
         return entries.firstKey();
     }
@@ -45,8 +49,9 @@ public class MemBitmap implements Bitmap {
     @Override
     public Entry put(Key key, Entry entry) {
         Bitmap.DefaultEntry myEntry = (entry instanceof Bitmap.DefaultEntry) ? (Bitmap.DefaultEntry) entry
-                : new Bitmap.DefaultEntry(entry.index(), entry.bitmap());
-        return entries.put(key, myEntry);
+                : new Bitmap.DefaultEntry(entry.key(), entry.bitmap());
+        entries.put(key, myEntry);
+        return myEntry;
     }
 
     @Override

@@ -14,9 +14,13 @@ import java.util.NoSuchElementException;
 import java.util.TreeMap;
 import java.util.function.Function;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.jcs3.JCS;
 import org.apache.commons.jcs3.access.CacheAccess;
+import org.apache.jena.atlas.logging.Log;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.xenei.rdfstore.store.Bitmap;
 
 /**
@@ -26,17 +30,62 @@ public class DiskBitmap implements Bitmap {
 
     private final File name;
     private final CacheAccess<Integer, PageData> cache;
+    private static final Logger LOG = LoggerFactory.getLogger(DiskBitmap.class);
+    private final boolean deleteOnExit;
 
+    /** number of bytes on the page */
     private static final int PAGE_DATA_SIZE = 16 * 1024 * 1024;
+    
+    /** number of bitmaps on a page */
     private static final int PAGE_BITMAP_COUNT = PAGE_DATA_SIZE / Long.BYTES;
-    private static final int INDEX_SIZE = PAGE_BITMAP_COUNT / Long.SIZE;
+    
+    /** number of bitmaps needed to track used pages.*/
+    private static final int INDEX_COUNT = BufferBitMap.numberOfBitMaps(PAGE_BITMAP_COUNT);
+    
+    /** number of bytes needed to track INDEX_COUNT bitmaps */
+    private static final int INDEX_SIZE = INDEX_COUNT * Long.BYTES;
+    
+    static {
+        // validate size
+        assert( (PAGE_DATA_SIZE % Long.BYTES) == 0);
+        assert( (PAGE_BITMAP_COUNT % Long.SIZE) == 0);
+    }
 
     public DiskBitmap(String fileName) {
+        this( fileName, false );
+    }
+    
+    public DiskBitmap(String fileName, boolean deleteOnExit) {
+        this.deleteOnExit = deleteOnExit;
         this.name = new File(fileName);
         if (name.exists() && !name.isDirectory()) {
             throw new IllegalArgumentException(fileName + " must be directory or not exist");
         }
-        cache = JCS.getInstance("default");
+        cache = JCS.getInstance(fileName);
+    }
+    
+    @Override
+    public void close() {
+        for (Integer i : sortedFiles().keySet()) {
+            try {
+                getPageFromDisk(i).close();
+            } catch (IOException e) {
+                LOG.error( "Error closing "+i, e);
+            }
+        }
+        cache.dispose();
+        if (deleteOnExit) {
+            try {
+                FileUtils.deleteDirectory(name);
+            } catch (IOException e) {
+                LOG.error( "Error during deleteOnExit ", e);
+            }
+        }
+    }
+    
+    @Override
+    public int pageSize() {
+        return PAGE_BITMAP_COUNT * Long.SIZE;
     }
 
     private int pageNumber(Key key) {
@@ -66,6 +115,27 @@ public class DiskBitmap implements Bitmap {
             throw new RuntimeException(e);
         }
     }
+    
+    private void removePage(PageData data) {
+        if (data.closed()) {
+            return;
+        }
+        try {
+            for (File f : name.listFiles()) {
+                try {
+                    if (data.pageNumber == Integer.parseInt(f.getName())) {
+                        cache.remove(data.pageNumber);
+                        data.close();
+                        f.delete();
+                    } 
+                }catch (NumberFormatException e) {
+                    // do nothing
+                }
+            }
+        } catch (IOException e) {
+            throw new RuntimeException( e );
+        }
+    }
 
     private TreeMap<Integer, File> sortedFiles() {
         TreeMap<Integer, File> result = new TreeMap<>();
@@ -86,7 +156,7 @@ public class DiskBitmap implements Bitmap {
             return null;
         }
         PageData pageData = getPage(entry.getKey().intValue(), this::getPageFromDisk);
-        return pageData.firstIndex();
+        return pageData.firstKey();
     }
 
     public Key lastIndex() {
@@ -95,7 +165,7 @@ public class DiskBitmap implements Bitmap {
             return null;
         }
         PageData pageData = getPage(entry.getKey().intValue(), this::getPageFromDisk);
-        return pageData.lastIndex();
+        return pageData.lastKey();
     }
 
     @Override
@@ -104,12 +174,12 @@ public class DiskBitmap implements Bitmap {
             throw new IllegalArgumentException("key may not be null");
         }
         PageData pageData = getPage(key);
-        Key result = pageData.higherIndex(key);
+        Key result = pageData.higherKey(key);
         if (result == null) {
             Integer pageKey = sortedFiles().higherKey(pageData.pageNumber);
             if (pageKey != null) {
                 pageData = getPage(pageKey.intValue(), this::getPageFromDisk);
-                return pageData.firstIndex();
+                return pageData.firstKey();
             }
         }
         return result;
@@ -144,6 +214,7 @@ public class DiskBitmap implements Bitmap {
         if (key == null) {
             throw new IllegalArgumentException("key must not be null");
         }
+        int pageNumber = pageNumber(key);
         return getPage(pageNumber(key), this::createPageOnDisk).put(key, entry);
 
     }
@@ -178,10 +249,9 @@ public class DiskBitmap implements Bitmap {
         File file = new File(name, pageNumber.toString());
         try {
             if (!file.exists()) {
-
                 file.createNewFile();
                 try (FileOutputStream fos = new FileOutputStream(file)) {
-                    byte[] nulls = IOUtils.byteArray(PAGE_SIZE + INDEX_SIZE);
+                    byte[] nulls = IOUtils.byteArray( PAGE_DATA_SIZE + INDEX_SIZE);
                     Arrays.fill(nulls, (byte) 0);
                     fos.write(nulls);
                 }
@@ -268,7 +338,7 @@ public class DiskBitmap implements Bitmap {
 
     }
 
-    private class PageData {
+    private class PageData implements AutoCloseable {
         RandomAccessFile file;
         LongBuffer buffer;
         LongBuffer index;
@@ -279,17 +349,23 @@ public class DiskBitmap implements Bitmap {
             FileChannel channel = this.file.getChannel();
             buffer = channel.map(FileChannel.MapMode.READ_WRITE, 0, PAGE_DATA_SIZE).asLongBuffer();
             index = channel.map(FileChannel.MapMode.READ_WRITE, PAGE_DATA_SIZE, INDEX_SIZE).asLongBuffer();
+            this.pageNumber = pageNumber;
         }
 
-//        <T extends Bitmap.Entry> Entry accept(T entry) {
-//            if (entry instanceof Entry) {
-//                return (Entry) entry;
-//            }
-//            return new Entry(entry.index(), buffer, pageNumber);
-//        }
+        @Override
+        public void close() throws IOException {
+            buffer = null;
+            index = null;
+            pageNumber = (int)NO_INDEX;
+            file.close();
+        }
+        
+        boolean closed() {
+            return pageNumber == (int)NO_INDEX;
+        }
 
         private long pageOffset() {
-            return pageNumber * PAGE_BITMAP_COUNT;
+            return pageNumber * (long)PAGE_BITMAP_COUNT;
         }
 
         /**
@@ -302,7 +378,7 @@ public class DiskBitmap implements Bitmap {
             long pagePos = key.asUnsigned() - pageOffset();
             if (pagePos < 0 || pagePos > PAGE_BITMAP_COUNT) {
                 throw new IllegalArgumentException(String.format("%s not in range [%s,%s)", key,
-                        (PAGE_BITMAP_COUNT * pageNumber), (PAGE_BITMAP_COUNT * (pageNumber + 1))));
+                        (PAGE_BITMAP_COUNT * (long)pageNumber), (PAGE_BITMAP_COUNT * ((long)pageNumber + 1))));
             }
             return (int) pagePos;
         }
@@ -312,19 +388,21 @@ public class DiskBitmap implements Bitmap {
          * 
          * @return the first key on this page, or null if it does not exist.
          */
-        Key firstIndex() {
-            int pagePosition = BufferBitMap.lowest(index);
+        Key firstKey() {
+            int pagePosition = BufferBitMap.lowestPosition(index);
             return (pagePosition == NO_INDEX) ? null : new Key(pagePosition + pageOffset());
         }
 
         /**
-         * Gets the first key on this page, or null if it does not exist.
+         * Gets the next key on this page, or null if it does not exist.
          * 
-         * @return the first key on this page, or null if it does not exist.
+         * @param Key the key for the last index.
+         * @return the next key on this page, or null if it does not exist.
          */
-        Key higherIndex(Key key) {
-            int nextKey = BufferBitMap.next(index, key.asSigned());
-            return (nextKey == (int) NO_INDEX) ? null : new Key(nextKey);
+        Key higherKey(Key key) {
+            int lastPos = (int) (key.asSigned() - pageOffset());
+            int pagePosition = BufferBitMap.nextPosition(index, lastPos);
+            return (pagePosition == (int) NO_INDEX) ? null : new Key(pagePosition+pageOffset());
         }
 
         /**
@@ -332,8 +410,8 @@ public class DiskBitmap implements Bitmap {
          * 
          * @return the last key on this page, or null if it does not exist.
          */
-        Key lastIndex() {
-            int pagePosition = BufferBitMap.lowest(index);
+        Key lastKey() {
+            int pagePosition = BufferBitMap.highestPosition(index);
             return (pagePosition == NO_INDEX) ? null : new Key(pagePosition + pageOffset());
         }
 
@@ -355,12 +433,15 @@ public class DiskBitmap implements Bitmap {
         void remove(Key key) {
             int pagePos = pagePosition(key);
             buffer.put(pagePos, 0L);
-            BufferBitMap.set(index, pagePos);
+            BufferBitMap.remove(index, pagePos);
+            if (BufferBitMap.lowestPosition(index) == NO_INDEX) {
+                removePage( this );
+            }
         }
 
         Iterator<Entry> iterator() {
             return new Iterator<Entry>() {
-                Key key = firstIndex();
+                Key key = firstKey();
 
                 @Override
                 public boolean hasNext() {
@@ -373,7 +454,7 @@ public class DiskBitmap implements Bitmap {
                         throw new NoSuchElementException();
                     }
                     Entry result = get(key);
-                    key = higherIndex(key);
+                    key = higherKey(key);
                     return result;
                 }
             };
@@ -418,13 +499,16 @@ public class DiskBitmap implements Bitmap {
             return (bitMaps.get(getLongIndex(bitIndex)) & getLongBit(bitIndex)) != 0;
         }
 
-        public static int lowest(final LongBuffer bitMaps) {
+        public static int lowestPosition(final LongBuffer bitMaps) {
+            return lowestPosition(bitMaps, 0);
+        }
+        
+        private static int lowestPosition(final LongBuffer bitMaps, int start) {
             LongBuffer buf = bitMaps.duplicate();
-            buf.position(0);
+            buf.position(start);
             long bitmap;
             try {
-                while ((bitmap = buf.get()) == 0) {
-                }
+                while ((bitmap = buf.get()) == 0) {}
             } catch (BufferUnderflowException e) {
                 return (int) NO_INDEX;
             }
@@ -437,15 +521,15 @@ public class DiskBitmap implements Bitmap {
             return result;
         }
 
-        public static int highest(final LongBuffer bitMaps) {
+        public static int highestPosition(final LongBuffer bitMaps) {
             LongBuffer buf = bitMaps.duplicate();
-            int position = Long.SIZE - 1;
+            int position = bitMaps.capacity()-1;
             long bitmap;
 
             while ((bitmap = buf.get(position)) == 0) {
                 position--;
                 if (position == (int) NO_INDEX) {
-                    return (int) NO_INDEX;
+                    return position;
                 }
             }
 
@@ -458,28 +542,33 @@ public class DiskBitmap implements Bitmap {
             return result;
         }
 
-        public static int next(final LongBuffer bitMaps, int bitIndex) {
-            int idx = getLongIndex(bitIndex + 1);
-            if (idx > bitMaps.limit()) {
-                return (int) NO_INDEX;
-            }
-            LongBuffer buf = bitMaps.duplicate();
-            buf.position(idx);
-            long bitmap;
-            try {
-                while ((bitmap = buf.get()) == 0) {
+        public static int nextPosition(final LongBuffer bitMaps, int lastPos) {
+            int idx = getLongIndex(lastPos);
+            int bit = lastPos % Long.SIZE;
+            bit++;
+            if (bit == Long.SIZE) {
+                idx++;
+                if (idx >= bitMaps.capacity()) {
+                    return (int) NO_INDEX;
                 }
-            } catch (BufferUnderflowException e) {
+                bit=0;
+            }
+ 
+            long bitmap = bitMaps.get(idx);
+            long mask = 1L << bit;
+            while ((bitmap & mask) == 0 && bit<Long.SIZE) {
+                bit++;
+            }
+            if (bit!=Long.SIZE) {
+                return (idx*Long.SIZE)+bit;
+            }
+            idx++;
+            if (idx >= bitMaps.capacity()) {
                 return (int) NO_INDEX;
             }
-            int offset = buf.position() - 1;
-            int result = idx == buf.position() ? (idx % Long.SIZE) : 0;
-            while ((bitmap & 0x01L) == 0 && result < Long.SIZE) {
-                bitmap = bitmap >> 1;
-                result++;
-            }
-
-            return (result < Long.SIZE) ? offset * Long.SIZE + result : (int) NO_INDEX;
+            
+            // find next non-zero map
+            return lowestPosition(bitMaps, idx );
         }
 
         /**
@@ -499,11 +588,12 @@ public class DiskBitmap implements Bitmap {
             map |= getLongBit(bitIndex);
             bitMaps.put(idx, map);
         }
+        
 
         public static void remove(final LongBuffer bitMaps, final int bitIndex) {
             int idx = getLongIndex(bitIndex);
             long map = bitMaps.get(idx);
-            map |= ~getLongBit(bitIndex);
+            map &= ~getLongBit(bitIndex);
             bitMaps.put(idx, map);
         }
 
@@ -577,7 +667,7 @@ public class DiskBitmap implements Bitmap {
         }
 
         @Override
-        public Key index() {
+        public Key key() {
             return key;
         }
 
