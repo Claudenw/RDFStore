@@ -5,7 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
-import org.xenei.rdfstore.store.Bitmap.Key;
 
 public abstract class AbstractBitmapEntryTest {
     private Key key0 = new Key(0);

@@ -10,7 +10,6 @@ import java.util.function.Supplier;
 
 import org.junit.jupiter.api.Test;
 import org.xenei.rdfstore.mem.MemBitmap;
-import org.xenei.rdfstore.store.Bitmap.Key;
 
 public abstract class AbstractBitmapTest {
 

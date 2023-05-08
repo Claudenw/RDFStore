@@ -26,7 +26,7 @@ import org.xenei.rdfstore.store.Index;
 
 public class NumberIdxTest extends AbstractIndexTest<BigDecimal> {
     // private Map<Number, IdxData<Bitmap>> map = new TreeMap<>();
-    private AbstractIndex.Mapper<BigDecimal> mapper = new AbstractIndex.MapMapper<BigDecimal>(
+    private Mapper<BigDecimal> mapper = new MapMapper<BigDecimal>(
             new TreeMap<BigDecimal, IdxData<Bitmap>>());
 
     private Supplier<Bitmap> supplier = () -> new MemBitmap();

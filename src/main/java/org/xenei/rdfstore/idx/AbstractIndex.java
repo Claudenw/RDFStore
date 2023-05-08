@@ -6,7 +6,6 @@ import static org.apache.jena.query.ReadWrite.WRITE;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Supplier;
@@ -32,7 +31,7 @@ public class AbstractIndex<T> implements Index<T> {
         txnHandler = new TxnHandler(txnId, this::prepareBegin, this::execCommit, this::execAbort, this::execEnd);
     }
 
-    private static <T> void addAll(Mapper<T> from, Mapper<T> to) {
+    static <T> void addAll(Mapper<T> from, Mapper<T> to) {
         Iterator<Map.Entry<T, IdxData<Bitmap>>> iter = from.iterator();
         while (iter.hasNext()) {
             Map.Entry<T, IdxData<Bitmap>> entry = iter.next();
@@ -135,64 +134,5 @@ public class AbstractIndex<T> implements Index<T> {
     @Override
     public void end() {
         txnHandler.end();
-    }
-
-    public interface Mapper<T> {
-
-        long size();
-
-        void put(T item, IdxData<Bitmap> idx);
-
-        IdxData<Bitmap> get(T item);
-
-        default void putAll(Mapper<T> other) {
-            addAll(other, this);
-        }
-
-        void remove(T thing);
-
-        Iterator<Map.Entry<T, IdxData<Bitmap>>> iterator();
-    }
-
-    public static class MapMapper<T> implements Mapper<T> {
-        Map<T, IdxData<Bitmap>> wrapped;
-
-        public MapMapper(Map<T, IdxData<Bitmap>> wrapped) {
-            this.wrapped = wrapped;
-        }
-
-        @Override
-        public long size() {
-            return wrapped.size();
-        }
-
-        @Override
-        public void put(T item, IdxData<Bitmap> idx) {
-            wrapped.put(item, idx);
-        }
-
-        @Override
-        public IdxData<Bitmap> get(T item) {
-            return wrapped.get(item);
-        }
-
-        @Override
-        public void putAll(Mapper<T> other) {
-            if (other instanceof AbstractIndex.MapMapper) {
-                wrapped.putAll(((MapMapper<T>) other).wrapped);
-            } else {
-                addAll(other, this);
-            }
-        }
-
-        @Override
-        public void remove(T thing) {
-            wrapped.remove(thing);
-        }
-
-        @Override
-        public Iterator<Entry<T, IdxData<Bitmap>>> iterator() {
-            return wrapped.entrySet().iterator();
-        }
     }
 }

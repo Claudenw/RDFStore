@@ -53,25 +53,9 @@ public class DiskLongList<T> implements LongList<T> {
         executor.execute(new DelTreeBuilder());
     }
 
-    private <X> X exH(IOSupplier<X> supplier) {
-        try {
-            return supplier.run();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private void exH(IOExec exec) {
-        try {
-            exec.run();
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
     private void prepareBegin(ReadWrite readWrite) {
         if (readWrite == WRITE) {
-            exH(() -> {
+            ExceptionHandler.exH(() -> {
                 tmpFile = File.createTempFile("dll", ".dat");
                 txnData = new RandomAccessFile(tmpFile.getAbsolutePath(), "rw");
             });
@@ -79,7 +63,7 @@ public class DiskLongList<T> implements LongList<T> {
             txnUsedDel = new ArrayList<>();
             txnDel = new ArrayList<>();
         }
-        exH(() -> {
+        ExceptionHandler.exH(() -> {
             txnDataPos = data.length();
             txnIdx = idx.length() / Long.BYTES;
         });
@@ -93,7 +77,7 @@ public class DiskLongList<T> implements LongList<T> {
                 txnHeader.write(data, txnHeader.pos);
             } else if (txnHeader.isUpdate()) {
                 // updated data entry
-                exH(() -> {
+                ExceptionHandler.exH(() -> {
                     ByteBuffer bb = txnData.getChannel().map(FileChannel.MapMode.READ_WRITE, txnHeader.txnDataPos,
                             txnHeader.len);
                     data.getChannel()
@@ -101,7 +85,7 @@ public class DiskLongList<T> implements LongList<T> {
                             .put(bb);
                 });
             } else if (txnHeader.isNew()) {
-                exH(() -> {
+                ExceptionHandler.exH(() -> {
                     txnHeader.pos = data.length();
                     ByteBuffer bb = txnData.getChannel().map(FileChannel.MapMode.READ_WRITE, txnHeader.txnDataPos,
                             txnHeader.len);
@@ -120,7 +104,7 @@ public class DiskLongList<T> implements LongList<T> {
     }
 
     private void execAbort() {
-        exH(() -> {
+        ExceptionHandler.exH(() -> {
 
             try {
                 txnData.close();
@@ -285,7 +269,7 @@ public class DiskLongList<T> implements LongList<T> {
     }
 
     private void writeTxn(TxnHeader txnHeader, ByteBuffer buffer) {
-        exH(() -> {
+        ExceptionHandler.exH(() -> {
             txnHeader.txnDataPos = txnData.length();
             txnData.getChannel().map(FileChannel.MapMode.READ_WRITE, txnHeader.txnDataPos, buffer.capacity())
                     .put(buffer);
@@ -293,7 +277,7 @@ public class DiskLongList<T> implements LongList<T> {
     }
 
     private T readTxn(TxnHeader txnHeader) {
-        exH(() -> {
+        ExceptionHandler.exH(() -> {
             txnData.seek(txnHeader.txnDataPos);
         });
         return serde.deserialize(txnData);
@@ -328,7 +312,7 @@ public class DiskLongList<T> implements LongList<T> {
     public void set(IdxData<T> item) {
         ByteBuffer buff = serde.serialize(item.data);
         txnHandler.doInTxn(WRITE, () -> {
-            exH(() -> {
+            ExceptionHandler.exH(() -> {
                 idx.seek(item.idx * Long.BYTES);
                 long pos = idx.readLong();
                 DataHeader header = new DataHeader(data, pos);
@@ -361,7 +345,7 @@ public class DiskLongList<T> implements LongList<T> {
                     return readTxn(txnHeader);
                 }
             }
-            return exH(() -> {
+            return ExceptionHandler.exH(() -> {
                 this.idx.seek(idx * Long.BYTES);
                 return readData(this.idx.readLong());
             });
@@ -381,7 +365,7 @@ public class DiskLongList<T> implements LongList<T> {
                     return;
                 }
             }
-            exH(() -> {
+            ExceptionHandler.exH(() -> {
                 if (idx * Long.BYTES >= this.idx.length()) {
                     return;
                 }
@@ -416,13 +400,13 @@ public class DiskLongList<T> implements LongList<T> {
 
                 @Override
                 public boolean hasNext() {
-                    return exH(() -> pos < idx.length());
+                    return ExceptionHandler.exH(() -> pos < idx.length());
                 }
 
                 @Override
                 public IterRec next() {
 
-                    return exH(() -> {
+                    return ExceptionHandler.exH(() -> {
                         if (pos < idx.length()) {
                             idx.seek(pos);
                             return new IterRec(pos++, idx.readLong());
@@ -459,7 +443,7 @@ public class DiskLongList<T> implements LongList<T> {
                 if (!hasNext()) {
                     throw new NoSuchElementException();
                 }
-                exH(() -> data.seek(nextRec.pos + DataHeader.SIZE));
+                ExceptionHandler.exH(() -> data.seek(nextRec.pos + DataHeader.SIZE));
                 return new IdxData<T>(nextRec.idx, serde.deserialize(data));
             }
         });
@@ -494,11 +478,11 @@ public class DiskLongList<T> implements LongList<T> {
 
         @Override
         public void run() {
-            long limit = exH(() -> data.length());
+            long limit = ExceptionHandler.exH(() -> data.length());
             long[] pos = { 0 };
             while (pos[0] < limit) {
                 txnHandler.doInTxn(READ, () -> {
-                    exH(() -> {
+                    ExceptionHandler.exH(() -> {
                         data.seek(pos[0]);
                         int len = data.readInt();
                         boolean deleted = data.readBoolean();

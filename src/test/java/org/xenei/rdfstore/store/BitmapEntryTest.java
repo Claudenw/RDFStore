@@ -1,7 +1,6 @@
 package org.xenei.rdfstore.store;
 
 import org.xenei.rdfstore.store.Bitmap.Entry;
-import org.xenei.rdfstore.store.Bitmap.Key;
 
 public class BitmapEntryTest extends AbstractBitmapEntryTest {
 

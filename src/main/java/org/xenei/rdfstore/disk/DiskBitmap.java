@@ -22,6 +22,7 @@ import org.apache.jena.atlas.logging.Log;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xenei.rdfstore.store.Bitmap;
+import org.xenei.rdfstore.store.Key;
 
 /**
  * Class to handle a large number of bitmaps.
@@ -62,6 +63,10 @@ public class DiskBitmap implements Bitmap {
             throw new IllegalArgumentException(fileName + " must be directory or not exist");
         }
         cache = JCS.getInstance(fileName);
+    }
+    
+    public String getFileName() {
+        return name.getAbsolutePath();
     }
     
     @Override

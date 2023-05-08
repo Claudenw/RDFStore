@@ -4,7 +4,7 @@ import java.nio.LongBuffer;
 
 import org.xenei.rdfstore.store.AbstractBitmapEntryTest;
 import org.xenei.rdfstore.store.Bitmap.Entry;
-import org.xenei.rdfstore.store.Bitmap.Key;
+import org.xenei.rdfstore.store.Key;
 
 public class DiskBitmapEntryTest extends AbstractBitmapEntryTest {
 

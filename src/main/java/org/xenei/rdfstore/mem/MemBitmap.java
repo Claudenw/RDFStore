@@ -4,6 +4,7 @@ import java.util.Iterator;
 import java.util.TreeMap;
 
 import org.xenei.rdfstore.store.Bitmap;
+import org.xenei.rdfstore.store.Key;
 
 /**
  * Class to handle a large number of bitmaps.

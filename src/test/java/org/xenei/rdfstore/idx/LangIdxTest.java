@@ -11,7 +11,7 @@ import org.xenei.rdfstore.store.Index;
 
 public class LangIdxTest extends AbstractIndexTest<String> {
     private Map<String, IdxData<Bitmap>> map = new HashMap<>();
-    private AbstractIndex.Mapper<String> mapper = new AbstractIndex.MapMapper<String>(
+    private Mapper<String> mapper = new MapMapper<String>(
             new HashMap<String, IdxData<Bitmap>>());
     private Supplier<Bitmap> supplier = () -> new MemBitmap();
 

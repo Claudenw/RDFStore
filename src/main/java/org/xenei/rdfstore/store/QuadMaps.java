@@ -1,9 +1,9 @@
 package org.xenei.rdfstore.store;
 
-public class QuadMaps {
-    private final LongList<Bitmap>[] maps;
+public class QuadMaps<T extends Bitmap> {
+    private final LongList<T>[] maps;
 
-    public QuadMaps(LongList<Bitmap> g, LongList<Bitmap> s, LongList<Bitmap> p, LongList<Bitmap> o) {
+    public QuadMaps(LongList<T> g, LongList<T> s, LongList<T> p, LongList<T> o) {
         maps = new LongList[4];
         maps[Idx.G.ordinal()] = g;
         maps[Idx.S.ordinal()] = s;
@@ -11,7 +11,7 @@ public class QuadMaps {
         maps[Idx.O.ordinal()] = o;
     }
 
-    public LongList<Bitmap> get(Idx idx) {
+    public LongList<T> get(Idx idx) {
         return maps[idx.ordinal()];
     }
 }
