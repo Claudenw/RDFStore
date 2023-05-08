@@ -53,6 +53,10 @@ public interface LongList<T> extends TransactionalComponent, TxnIdHolder {
      */
     public void remove(long idx);
 
+    /**
+     * Returns each item in the list once.
+     * @return an ExtendedIterator over the items in the list.
+     */
     public ExtendedIterator<IdxData<T>> iterator();
 
     class LongListIterator<T> implements Iterator<IdxData<T>> {

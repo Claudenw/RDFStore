@@ -4,6 +4,7 @@ import java.nio.ByteBuffer;
 
 import org.xenei.rdfstore.store.AbstractQuads;
 import org.xenei.rdfstore.store.Bitmap;
+import org.xenei.rdfstore.store.QuadMaps;
 
 public class MemQuads extends AbstractQuads {
 

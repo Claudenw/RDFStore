@@ -9,14 +9,17 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.NavigableSet;
+import java.util.NoSuchElementException;
 import java.util.TreeSet;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 import org.apache.jena.query.ReadWrite;
 import org.apache.jena.util.iterator.ExtendedIterator;
+import org.apache.jena.util.iterator.WrappedIterator;
 import org.xenei.rdfstore.store.IdxData;
 import org.xenei.rdfstore.store.LongList;
 import org.xenei.rdfstore.txn.TxnHandler;
@@ -50,7 +53,7 @@ public class DiskLongList<T> implements LongList<T> {
         executor.execute(new DelTreeBuilder());
     }
 
-    private <T> T exH(IOSupplier<T> supplier) {
+    private <X> X exH(IOSupplier<X> supplier) {
         try {
             return supplier.run();
         } catch (IOException e) {
@@ -393,10 +396,73 @@ public class DiskLongList<T> implements LongList<T> {
         });
     }
 
+    class IterRec {
+        int idx;
+        long pos;
+
+        IterRec(int idx, long pos) {
+            this.idx = idx;
+            this.pos = pos;
+        }
+    }
+
     @Override
     public ExtendedIterator<IdxData<T>> iterator() {
-        // TODO Auto-generated method stub
-        return null;
+
+        return WrappedIterator.create(new Iterator<IdxData<T>>() {
+
+            private Iterator<IterRec> innerIter = new Iterator<IterRec>() {
+                int pos = 0;
+
+                @Override
+                public boolean hasNext() {
+                    return exH(() -> pos < idx.length());
+                }
+
+                @Override
+                public IterRec next() {
+
+                    return exH(() -> {
+                        if (pos < idx.length()) {
+                            idx.seek(pos);
+                            return new IterRec(pos++, idx.readLong());
+                        }
+                        throw new NoSuchElementException();
+                    });
+                }
+            };
+
+            IterRec nextRec = null;
+
+            private boolean findNext() {
+                while (nextRec != null) {
+                    if (innerIter.hasNext()) {
+                        IterRec rec = innerIter.next();
+                        DataHeader header = new DataHeader(data, rec.pos);
+                        if (!header.deleted) {
+                            nextRec = rec;
+                        }
+                    } else {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            @Override
+            public boolean hasNext() {
+                return nextRec != null || findNext();
+            }
+
+            @Override
+            public IdxData<T> next() {
+                if (!hasNext()) {
+                    throw new NoSuchElementException();
+                }
+                exH(() -> data.seek(nextRec.pos + DataHeader.SIZE));
+                return new IdxData<T>(nextRec.idx, serde.deserialize(data));
+            }
+        });
     }
 
     @Override
